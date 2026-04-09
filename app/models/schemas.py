@@ -6,16 +6,14 @@ class TransactionRow(BaseModel):
     id: str
     user_id: str
     budget_id: Optional[str] = None
-    account_id: str
+    account_id: Optional[str] = None
     category_id: str
     amount: float
-    category: str
     description: Optional[str] = None
     is_recurring: bool = False
     merchant: Optional[str] = None
     note: Optional[str] = None
     notes: Optional[str] = None
-    sub_category: Optional[str] = None
     tags: Optional[list[str]] = None
     transaction_date: date
     type: str # 'income' | 'expense'
