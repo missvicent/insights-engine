@@ -135,7 +135,7 @@ class InsightSummary(BaseModel):
     total_income: float
     total_expenses: float
     net: float                         # income - expenses
-    savings_rate: float                # net/income * 100, or 0 if no income
+    savings_rate: Optional[float] = None                # net/income * 100, or 0 if no income
  
     # vs last period
     expenses_change_pct: Optional[float] = None   # None if no previous period data
