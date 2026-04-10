@@ -132,6 +132,7 @@ def detect_category_totals(txs: list[TransactionRow]) -> dict[str, float]:
         d[key] += t.amount
     return d
 
+
 def detect_category_spikes(
     current: list[TransactionRow],
     previous: list[TransactionRow],
@@ -141,7 +142,7 @@ def detect_category_spikes(
     name_by_id: dict[str, str] = {
         t.category_id: t.category_name
         for t in current
-        if t.category_name
+        if t.category_name and t.type == "expense"
     }
     result: list[Anomaly] = []
 
@@ -188,7 +189,7 @@ def detect_budget_overspending(
     name_by_id: dict[str, str] = {
         t.category_id: t.category_name
         for t in current
-        if t.category_name
+        if t.category_name and t.type == "expense"
     }
 
     for cat, total in current_cats.items():
