@@ -41,14 +41,14 @@ def category_breakdown(
     for t in expenses:
         key = t.category_id or "uncategorized"
         if key not in groups:
-           groups[key] = {
-            "category_id": key,
-            "category_name": t.category_name,
-            "icon": t.category_icon,
-            "color": t.category_color,
-            "total": 0.0,
-            "count": 0
-           }
+            groups[key] = {
+                "category_id": key,
+                "category_name": t.category_name,
+                "icon": t.category_icon,
+                "color": t.category_color,
+                "total": 0.0,
+                "count": 0,
+            }
         
         groups[key]["total"] += t.amount
         groups[key]["count"] += 1
