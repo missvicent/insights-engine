@@ -6,8 +6,9 @@ test suite is out of scope for this plan.
 
 from datetime import date
 
-from app.models.schemas import AllocationRow, TransactionRow
+from app.models.schemas import AllocationRow, CategoryBreakdown, TransactionRow
 from app.services.insights_engine import (
+    category_breakdown,
     detect_budget_overspending,
     detect_category_spikes,
 )
@@ -78,3 +79,22 @@ def test_budget_overspending_anomaly_uses_category_name_not_id():
     assert anomaly.category_name == GROCERIES_NAME
     assert GROCERIES_NAME in anomaly.message
     assert GROCERIES_ID not in anomaly.message
+
+
+def test_category_breakdown_populates_transaction_count():
+    current = [
+        _expense(40.0),
+        _expense(60.0),
+        _expense(50.0, category_id="cat-rent-uuid", category_name="Rent"),
+    ]
+
+    result = category_breakdown(current, allocations=[])
+
+    assert len(result) == 2
+    assert all(isinstance(row, CategoryBreakdown) for row in result)
+
+    by_id = {row.category_id: row for row in result}
+    assert by_id[GROCERIES_ID].transaction_count == 2
+    assert by_id[GROCERIES_ID].total == 100.0
+    assert by_id["cat-rent-uuid"].transaction_count == 1
+    assert by_id["cat-rent-uuid"].total == 50.0

@@ -69,7 +69,7 @@ def category_breakdown(
             icon=g["icon"],
             color=g["color"],
             total=round(g["total"], 2),
-            count=g["count"],
+            transaction_count=g["count"],
             pct_of_total=round((g["total"] / total_expenses) * 100, 2),
             budget_limit=budget_limit,
             budget_used_pct=budget_used_pct
