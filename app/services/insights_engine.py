@@ -120,8 +120,8 @@ def anomalies(
     ]
 
 
-def detect_category_totals(txs):
-    # Rule 1: Category spikes
+def detect_category_totals(txs: list[TransactionRow]) -> dict[str, float]:
+    # Shared helper: sum expenses by category_id.
     d = {}
     for t in txs:
         if t.type != "expense":
@@ -132,7 +132,10 @@ def detect_category_totals(txs):
         d[key] += t.amount
     return d
 
-def detect_category_spikes(current, previous):
+def detect_category_spikes(
+    current: list[TransactionRow],
+    previous: list[TransactionRow],
+) -> list[Anomaly]:
     current_cats = detect_category_totals(current)
     previous_cats = detect_category_totals(previous)
     result = []
@@ -161,7 +164,10 @@ def detect_category_spikes(current, previous):
     return result
 
 
-def detect_budget_overspending(current, allocations):
+def detect_budget_overspending(
+    current: list[TransactionRow],
+    allocations: list[AllocationRow],
+) -> list[Anomaly]:
     # Rule 2: Budget overspending
     result = []
     current_cats = detect_category_totals(current)
@@ -180,7 +186,9 @@ def detect_budget_overspending(current, allocations):
     return result
 
 
-def detect_large_single_transactions(current):
+def detect_large_single_transactions(
+    current: list[TransactionRow],
+) -> list[Anomaly]:
     # Rule 3: Large single transactions
     result = []
     expenses = [t for t in current if t.type == "expense"]
