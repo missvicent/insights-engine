@@ -138,26 +138,39 @@ def detect_category_spikes(
 ) -> list[Anomaly]:
     current_cats = detect_category_totals(current)
     previous_cats = detect_category_totals(previous)
-    result = []
+    name_by_id: dict[str, str] = {
+        t.category_id: t.category_name
+        for t in current
+        if t.category_name
+    }
+    result: list[Anomaly] = []
 
     for cat, current_total in current_cats.items():
+        display_name = name_by_id.get(cat, cat)
         prev_total = previous_cats.get(cat, 0)
         if prev_total == 0:
             result.append(Anomaly(
                 type="new_category",
-                category_name=cat,
-                message=f"New spending in {cat} - ${current_total:.0f} this month (not previously tracked)",
+                category_name=display_name,
+                message=(
+                    f"New spending in {display_name} - "
+                    f"${current_total:.0f} this month (not previously tracked)"
+                ),
                 severity="low",
                 amount=current_total,
             ))
         else:
-            change =((current_total - prev_total) / prev_total) 
+            change = (current_total - prev_total) / prev_total
             if change > 0.30:
                 severity = "high" if change > 0.50 else "medium"
                 result.append(Anomaly(
                     type="spike",
-                    category_name=cat,
-                    message=f"Spending in {cat} increased by {change*100:.0f}% this month (vs {prev_total:.0f} last month)",
+                    category_name=display_name,
+                    message=(
+                        f"Spending in {display_name} increased by "
+                        f"{change * 100:.0f}% this month "
+                        f"(vs {prev_total:.0f} last month)"
+                    ),
                     severity=severity,
                     amount=current_total,
                 ))
@@ -169,17 +182,27 @@ def detect_budget_overspending(
     allocations: list[AllocationRow],
 ) -> list[Anomaly]:
     # Rule 2: Budget overspending
-    result = []
+    result: list[Anomaly] = []
     current_cats = detect_category_totals(current)
     alloc_map = {a.category_id: a.amount for a in allocations if a.category_id}
+    name_by_id: dict[str, str] = {
+        t.category_id: t.category_name
+        for t in current
+        if t.category_name
+    }
+
     for cat, total in current_cats.items():
         limit = alloc_map.get(cat, 0)
         if limit and total > limit:
+            display_name = name_by_id.get(cat, cat)
             pct = total / limit * 100
             result.append(Anomaly(
                 type="budget_exceeded",
-                category_name=cat,
-                message=f"'{cat}' budget exceeded by {pct:.0f}% of budget (${total:.0f} of ${limit:.0f})",
+                category_name=display_name,
+                message=(
+                    f"'{display_name}' budget exceeded by {pct:.0f}% of "
+                    f"budget (${total:.0f} of ${limit:.0f})"
+                ),
                 severity="high" if pct > 120 else "medium",
                 amount=total - limit,
             ))
