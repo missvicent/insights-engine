@@ -41,14 +41,14 @@ def category_breakdown(
     for t in expenses:
         key = t.category_id or "uncategorized"
         if key not in groups:
-           groups[key] = {
-            "category_id": key,
-            "category_name": t.category_name,
-            "icon": t.category_icon,
-            "color": t.category_color,
-            "total": 0.0,
-            "count": 0
-           }
+            groups[key] = {
+                "category_id": key,
+                "category_name": t.category_name,
+                "icon": t.category_icon,
+                "color": t.category_color,
+                "total": 0.0,
+                "count": 0,
+            }
         
         groups[key]["total"] += t.amount
         groups[key]["count"] += 1
@@ -69,7 +69,7 @@ def category_breakdown(
             icon=g["icon"],
             color=g["color"],
             total=round(g["total"], 2),
-            count=g["count"],
+            transaction_count=g["count"],
             pct_of_total=round((g["total"] / total_expenses) * 100, 2),
             budget_limit=budget_limit,
             budget_used_pct=budget_used_pct
@@ -120,8 +120,8 @@ def anomalies(
     ]
 
 
-def detect_category_totals(txs):
-    # Rule 1: Category spikes
+def detect_category_totals(txs: list[TransactionRow]) -> dict[str, float]:
+    # Shared helper: sum expenses by category_id.
     d = {}
     for t in txs:
         if t.type != "expense":
@@ -132,55 +132,87 @@ def detect_category_totals(txs):
         d[key] += t.amount
     return d
 
-def detect_category_spikes(current, previous):
+
+def detect_category_spikes(
+    current: list[TransactionRow],
+    previous: list[TransactionRow],
+) -> list[Anomaly]:
     current_cats = detect_category_totals(current)
     previous_cats = detect_category_totals(previous)
-    result = []
+    name_by_id: dict[str, str] = {
+        t.category_id: t.category_name
+        for t in current
+        if t.category_name and t.type == "expense"
+    }
+    result: list[Anomaly] = []
 
     for cat, current_total in current_cats.items():
+        display_name = name_by_id.get(cat, cat)
         prev_total = previous_cats.get(cat, 0)
         if prev_total == 0:
             result.append(Anomaly(
                 type="new_category",
-                category_name=cat,
-                message=f"New spending in {cat} - ${current_total:.0f} this month (not previously tracked)",
+                category_name=display_name,
+                message=(
+                    f"New spending in {display_name} - "
+                    f"${current_total:.0f} this month (not previously tracked)"
+                ),
                 severity="low",
                 amount=current_total,
             ))
         else:
-            change =((current_total - prev_total) / prev_total) 
+            change = (current_total - prev_total) / prev_total
             if change > 0.30:
                 severity = "high" if change > 0.50 else "medium"
                 result.append(Anomaly(
                     type="spike",
-                    category_name=cat,
-                    message=f"Spending in {cat} increased by {change*100:.0f}% this month (vs {prev_total:.0f} last month)",
+                    category_name=display_name,
+                    message=(
+                        f"Spending in {display_name} increased by "
+                        f"{change * 100:.0f}% this month "
+                        f"(vs {prev_total:.0f} last month)"
+                    ),
                     severity=severity,
                     amount=current_total,
                 ))
     return result
 
 
-def detect_budget_overspending(current, allocations):
+def detect_budget_overspending(
+    current: list[TransactionRow],
+    allocations: list[AllocationRow],
+) -> list[Anomaly]:
     # Rule 2: Budget overspending
-    result = []
+    result: list[Anomaly] = []
     current_cats = detect_category_totals(current)
     alloc_map = {a.category_id: a.amount for a in allocations if a.category_id}
+    name_by_id: dict[str, str] = {
+        t.category_id: t.category_name
+        for t in current
+        if t.category_name and t.type == "expense"
+    }
+
     for cat, total in current_cats.items():
         limit = alloc_map.get(cat, 0)
         if limit and total > limit:
+            display_name = name_by_id.get(cat, cat)
             pct = total / limit * 100
             result.append(Anomaly(
                 type="budget_exceeded",
-                category_name=cat,
-                message=f"'{cat}' budget exceeded by {pct:.0f}% of budget (${total:.0f} of ${limit:.0f})",
+                category_name=display_name,
+                message=(
+                    f"'{display_name}' budget exceeded by {pct:.0f}% of "
+                    f"budget (${total:.0f} of ${limit:.0f})"
+                ),
                 severity="high" if pct > 120 else "medium",
                 amount=total - limit,
             ))
     return result
 
 
-def detect_large_single_transactions(current):
+def detect_large_single_transactions(
+    current: list[TransactionRow],
+) -> list[Anomaly]:
     # Rule 3: Large single transactions
     result = []
     expenses = [t for t in current if t.type == "expense"]
