@@ -606,7 +606,7 @@ class TestDetectEndOfPeriodConcentration:
         result = detect_end_of_period_concentration(df, date(2026, 4, 1), date(2026, 4, 30))
         # Message includes a percent like "98.0%"
         assert result[0].message.endswith(
-            "% of spending in the last quarter of the month"
+            "% of spending in the last quarter of the window"
         )
 
     def test_timestamp_comparison_against_date(self):
