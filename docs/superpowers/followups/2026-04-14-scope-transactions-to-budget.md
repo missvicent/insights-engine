@@ -1,3 +1,10 @@
+---
+status: open
+severity: important
+resolved_date:
+resolved_by:
+---
+
 # Follow-up: Scope transactions to the selected budget
 
 **Severity:** Important — correctness gap in the multi-budget case.

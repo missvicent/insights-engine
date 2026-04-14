@@ -23,7 +23,7 @@
 |---|---|---|
 | `app/models/schemas.py` | Pydantic models | Modify — add `InsightWindow`, `InsightsQuery`; extend `InsightSummary` |
 | `app/db/client.py` | DB access | Modify — add `BudgetNotFound`, add `fetch_budget`, delete `fetch_budgets` |
-| `app/services/insights_engine.py` | Pure engine | Modify — add `resolve_window`, `build_summary`; change `detect_patterns` + `detect_end_of_month_concentration` signatures |
+| `app/services/insights_engine.py` | Pure engine | Modify — add `resolve_window`, `build_summary`; change `detect_patterns` + `detect_end_of_period_concentration` signatures |
 | `app/routes/deps.py` | Shared route dependencies | Create — stub `get_current_user` |
 | `app/routes/insights.py` | `/insights` route | Create |
 | `app/routes/ai.py` | `/ai-insights` route (stub) | Create |
@@ -384,7 +384,7 @@ git commit -m "feat(engine): add resolve_window helper"
 
 ---
 
-## Task 5: Change `detect_patterns` / `detect_end_of_month_concentration` signatures
+## Task 5: Change `detect_patterns` / `detect_end_of_period_concentration` signatures
 
 **Files:**
 - Modify: `app/services/insights_engine.py:268-355`
@@ -392,7 +392,7 @@ git commit -m "feat(engine): add resolve_window helper"
 
 - [ ] **Step 1: Update existing pattern tests to new signature**
 
-In `tests/test_insights_engine.py`, find every call to `detect_patterns(...)` and `detect_end_of_month_concentration(...)`. Replace the `BudgetRow` argument with two explicit `date` arguments.
+In `tests/test_insights_engine.py`, find every call to `detect_patterns(...)` and `detect_end_of_period_concentration(...)`. Replace the `BudgetRow` argument with two explicit `date` arguments.
 
 Specifically, search for these call sites and rewrite:
 
@@ -413,13 +413,13 @@ result = detect_patterns(txs, make_budget())
 result = detect_patterns(txs, date(2026, 4, 1), date(2026, 4, 30))
 ```
 
-For `detect_end_of_month_concentration` callers, the call changes from passing a `BudgetRow` to passing two dates in the same positions. Replace `make_budget()` (or any `BudgetRow` variable) with `date(2026, 4, 1), date(2026, 4, 30)` matching that budget's start/end.
+For `detect_end_of_period_concentration` callers, the call changes from passing a `BudgetRow` to passing two dates in the same positions. Replace `make_budget()` (or any `BudgetRow` variable) with `date(2026, 4, 1), date(2026, 4, 30)` matching that budget's start/end.
 
 If any test explicitly constructs a `BudgetRow` with non-default dates and passes it to `detect_patterns`, preserve those exact dates in the two new arguments.
 
 - [ ] **Step 2: Run tests to verify they fail against the current engine**
 
-Run: `pytest tests/test_insights_engine.py::TestDetectPatterns tests/test_insights_engine.py::TestDetectEndOfMonthConcentration -v`
+Run: `pytest tests/test_insights_engine.py::TestDetectPatterns tests/test_insights_engine.py::TestDetectEndOfPeriodConcentration -v`
 Expected: failures (signature mismatch — engine still expects `BudgetRow`).
 
 - [ ] **Step 3: Update `detect_patterns` signature**
@@ -452,17 +452,17 @@ def detect_patterns(
 
     return [
         *detect_weekend_spend(df, total_expenses),
-        *detect_end_of_month_concentration(df, window_start, window_end),
+        *detect_end_of_period_concentration(df, window_start, window_end),
         *detect_frequent_categories(df),
     ]
 ```
 
-- [ ] **Step 4: Update `detect_end_of_month_concentration` signature**
+- [ ] **Step 4: Update `detect_end_of_period_concentration` signature**
 
-In the same file, replace the existing `detect_end_of_month_concentration` (lines 331-355) with:
+In the same file, replace the existing `detect_end_of_period_concentration` (lines 331-355) with:
 
 ```python
-def detect_end_of_month_concentration(
+def detect_end_of_period_concentration(
     df: pd.DataFrame,
     window_start: date,
     window_end: date,
@@ -482,7 +482,7 @@ def detect_end_of_month_concentration(
         pct = (end_total / total) * 100
         return [
             Pattern(
-                type="end_of_month_concentration",
+                type="end_of_period_concentration",
                 message=(f"{pct:.1f}% of spending in the last quarter of the month"),
                 data={},
             )

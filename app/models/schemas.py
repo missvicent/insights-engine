@@ -14,7 +14,7 @@ AnomalyType = Literal[
 
 PatternType = Literal[
     "weekend_spend",
-    "end_of_month_concentration",
+    "end_of_period_concentration",
     "frequent_category",
     "nightly_spend",
     "weekly_spend",
@@ -218,13 +218,6 @@ class AIInsightsResponse(BaseModel):
 
 
 # ── Query params ──────────────────────────────────────────────────────────────
-
-
-class InsightPeriod(BaseModel):
-    year: int
-    month: int
-
-
 class InsightsQuery(BaseModel):
     budget_id: str
     window: InsightWindow

@@ -25,7 +25,7 @@ from app.services.insights_engine import (
     detect_anomalies,
     detect_budget_overspending,
     detect_category_spikes,
-    detect_end_of_month_concentration,
+    detect_end_of_period_concentration,
     detect_frequent_categories,
     detect_large_single_transactions,
     detect_patterns,
@@ -561,26 +561,26 @@ class TestDetectWeekendSpend:
         assert result[0].data["weekend_daily"] == pytest.approx(333.33)
 
 
-class TestDetectEndOfMonthConcentration:
+class TestDetectEndOfPeriodConcentration:
     # Reuses _expense_df from Task 12 (same module).
     # April 2026: 30-day budget, last quarter = Apr 23-30 (period_length//4 = 7)
 
-    def test_concentrated_end_of_month(self):
+    def test_concentrated_end_of_period(self):
         rows = [
             {"amount": 10.0, "date": date(2026, 4, 1)},
             {"amount": 10.0, "date": date(2026, 4, 5)},
             {"amount": 500.0, "date": date(2026, 4, 25)},  # in last quarter
         ]
         df = _expense_df(rows)
-        result = detect_end_of_month_concentration(df, date(2026, 4, 1), date(2026, 4, 30))
+        result = detect_end_of_period_concentration(df, date(2026, 4, 1), date(2026, 4, 30))
         assert len(result) == 1
-        assert result[0].type == "end_of_month_concentration"
+        assert result[0].type == "end_of_period_concentration"
         assert "%" in result[0].message
 
     def test_even_distribution_no_pattern(self):
         rows = [{"amount": 10.0, "date": date(2026, 4, d)} for d in range(1, 29)]
         df = _expense_df(rows)
-        assert detect_end_of_month_concentration(df, date(2026, 4, 1), date(2026, 4, 30)) == []
+        assert detect_end_of_period_concentration(df, date(2026, 4, 1), date(2026, 4, 30)) == []
 
     def test_exactly_40pct_no_pattern(self):
         # total=100, end_total=40 → ratio == 0.40, strict > fails
@@ -589,12 +589,12 @@ class TestDetectEndOfMonthConcentration:
             {"amount": 40.0, "date": date(2026, 4, 25)},
         ]
         df = _expense_df(rows)
-        assert detect_end_of_month_concentration(df, date(2026, 4, 1), date(2026, 4, 30)) == []
+        assert detect_end_of_period_concentration(df, date(2026, 4, 1), date(2026, 4, 30)) == []
 
     def test_zero_period_length_returns_empty(self):
         # window_start == window_end → period_length == 0 → returns []
         df = _expense_df([{"amount": 10.0, "date": date(2026, 4, 1)}])
-        assert detect_end_of_month_concentration(df, date(2026, 4, 1), date(2026, 4, 1)) == []
+        assert detect_end_of_period_concentration(df, date(2026, 4, 1), date(2026, 4, 1)) == []
 
     def test_pct_formatting_no_syntax_error(self):
         # Regression: the old code had `:.1f * 100` which raised ValueError.
@@ -603,10 +603,10 @@ class TestDetectEndOfMonthConcentration:
             {"amount": 500.0, "date": date(2026, 4, 25)},
         ]
         df = _expense_df(rows)
-        result = detect_end_of_month_concentration(df, date(2026, 4, 1), date(2026, 4, 30))
+        result = detect_end_of_period_concentration(df, date(2026, 4, 1), date(2026, 4, 30))
         # Message includes a percent like "98.0%"
         assert result[0].message.endswith(
-            "% of spending in the last quarter of the month"
+            "% of spending in the last quarter of the window"
         )
 
     def test_timestamp_comparison_against_date(self):
@@ -614,7 +614,7 @@ class TestDetectEndOfMonthConcentration:
         # If it weren't, this would raise a TypeError.
         rows = [{"amount": 500.0, "date": date(2026, 4, 25)}]
         df = _expense_df(rows)
-        result = detect_end_of_month_concentration(df, date(2026, 4, 1), date(2026, 4, 30))
+        result = detect_end_of_period_concentration(df, date(2026, 4, 1), date(2026, 4, 30))
         assert len(result) == 1
 
     def test_short_budget_period(self):
@@ -624,7 +624,7 @@ class TestDetectEndOfMonthConcentration:
             {"amount": 500.0, "date": date(2026, 4, 3)},
         ]
         df = _expense_df(rows)
-        result = detect_end_of_month_concentration(df, date(2026, 4, 1), date(2026, 4, 3))
+        result = detect_end_of_period_concentration(df, date(2026, 4, 1), date(2026, 4, 3))
         # Only the Apr 3 row is >= Apr 3, so it hits 98%.
         assert len(result) == 1
 
@@ -743,7 +743,7 @@ class TestDetectPatterns:
             )
         result = detect_patterns(txs, date(2026, 4, 1), date(2026, 4, 30))
         types = {p.type for p in result}
-        assert "end_of_month_concentration" in types
+        assert "end_of_period_concentration" in types
         assert "frequent_category" in types
 
 

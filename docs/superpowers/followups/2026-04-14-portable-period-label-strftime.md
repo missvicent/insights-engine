@@ -1,3 +1,10 @@
+---
+status: open
+severity: minor
+resolved_date:
+resolved_by:
+---
+
 # Follow-up: Make `_format_period_label` Windows-portable
 
 **Severity:** Minor — works on macOS/Linux, breaks on Windows with `ValueError`.

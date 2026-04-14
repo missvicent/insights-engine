@@ -1,3 +1,13 @@
+---
+status: resolved
+severity: minor
+resolved_date: 2026-04-14
+resolved_by: nily
+---
+
+**Resolution:** `InsightPeriod` removed from `app/models/schemas.py`. `# ── Query params ──`
+banner retained above `InsightsQuery`. Verified: `grep -rn "InsightPeriod" app/ tests/` → zero matches.
+
 # Follow-up: Delete the unreferenced `InsightPeriod` model
 
 **Severity:** Minor — dead code.
