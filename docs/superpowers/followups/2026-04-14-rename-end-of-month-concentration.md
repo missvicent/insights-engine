@@ -1,49 +1,54 @@
 ---
-status: open
+status: resolved
 severity: minor
-resolved_date:
-resolved_by:
+resolved_date: 2026-04-14
+resolved_by: nily
 ---
 
-# Follow-up: Rename `end_of_period_concentration` → `end_of_period_concentration`
-
-**Severity:** Minor — cosmetic UX bug, pre-existing (not introduced by this feature).
+# Follow-up: Rename `end_of_month_concentration` → `end_of_period_concentration`
 
 ## Problem
 
-For a `1y` or `6m` window, the `detect_end_of_period_concentration` pattern still emits:
+For a `1y` or `6m` window, the pattern still emitted:
 
 > "90.0% of spending in the last quarter of the month"
 
-The math (`period_length // 4` of the window) is correct, but the wording is wrong — it isn't a month and hasn't been since `detect_patterns` was decoupled from `BudgetRow` in Task 5.
+The math (`period_length // 4` of the window) was correct, but the wording and
+symbol names still referenced "month" even though `detect_patterns` had been
+decoupled from `BudgetRow` in Task 5 of the budget-scoped-insights plan.
 
-## Proposed fix
+## Resolution
 
-Rename everything — function, literal, message — to reflect that this is about the last ¼ of the analysis window.
+All three sites are updated — verified by `grep -rn "end_of_month\|of the month" app/ tests/` returning zero matches.
 
 1. `app/services/insights_engine.py`
-   - Rename `detect_end_of_period_concentration` → `detect_end_of_period_concentration`.
-   - Update the import / call inside `detect_patterns`.
-   - Change the emitted message:
+   - Function renamed: `detect_end_of_month_concentration` → `detect_end_of_period_concentration`.
+   - Call site inside `detect_patterns` updated.
+   - Emitted message changed to:
      ```python
      message=f"{pct:.1f}% of spending in the last quarter of the window"
      ```
 
 2. `app/models/schemas.py`
-   - Update `PatternType` literal: `"end_of_period_concentration"` → `"end_of_period_concentration"`.
-   - **This is a client-facing breaking change** — any stored response data or front-end code keying off `"end_of_period_concentration"` will need to be migrated. Coordinate with the front-end before shipping.
+   - `PatternType` literal: `"end_of_month_concentration"` → `"end_of_period_concentration"`.
+   - Front-end impact: none observed — there is no front-end in this repo, and
+     no stored responses key off the old literal.
 
 3. `tests/test_insights_engine.py`
-   - Rename `TestDetectEndOfPeriodConcentration` → `TestDetectEndOfPeriodConcentration`.
-   - Update any string assertions that referenced "of the month".
+   - Test class renamed to `TestDetectEndOfPeriodConcentration`.
+   - Assertion in `test_pct_formatting_no_syntax_error` updated to
+     `"% of spending in the last quarter of the window"`.
 
 ## Verification
 
-- `grep -rn "end_of_period_concentration" app/ tests/` → zero matches after the rename.
-- `pytest tests/` → 97/97 green.
-- A request with a 1y window and concentrated spend in the final 3 months should produce the new message.
+- `grep -rn "end_of_month\|of the month" app/ tests/` → zero matches.
+- `venv/bin/python -m pytest tests/ -q` → 97 passed.
 
 ## Notes
 
-- Can be done alongside any other client-visible change that's already timing in.
-- Safe to defer if the front-end isn't being updated right now.
+- The original draft of this follow-up had a typo that made it read "rename X → X";
+  that has been corrected above for the historical record.
+- A separate, broader follow-up still tracks the stale "this month" / "last month"
+  wording in `detect_category_spikes`, `detect_category_removed`, and
+  `detect_budget_overspending` — see the code-review notes on branch
+  `feat/budget-scoped-insights`.
