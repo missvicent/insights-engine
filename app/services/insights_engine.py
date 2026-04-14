@@ -16,7 +16,6 @@ from dateutil.relativedelta import relativedelta
 from app.models.schemas import (
     AllocationRow,
     Anomaly,
-    BudgetRow,
     CategoryBreakdown,
     FinancialTotals,
     GoalRow,
@@ -309,7 +308,9 @@ def detect_large_single_transactions(
 
 
 def detect_patterns(
-    transactions: list[TransactionRow], budget: BudgetRow
+    transactions: list[TransactionRow],
+    window_start: date,
+    window_end: date,
 ) -> list[Pattern]:
     expenses = [t for t in transactions if t.type == "expense"]
     if not expenses:
@@ -331,7 +332,7 @@ def detect_patterns(
 
     return [
         *detect_weekend_spend(df, total_expenses),
-        *detect_end_of_month_concentration(df, budget),
+        *detect_end_of_month_concentration(df, window_start, window_end),
         *detect_frequent_categories(df),
     ]
 
@@ -372,14 +373,16 @@ def detect_weekend_spend(df: pd.DataFrame, total_expenses: float) -> list[Patter
 
 
 def detect_end_of_month_concentration(
-    df: pd.DataFrame, budget: BudgetRow
+    df: pd.DataFrame,
+    window_start: date,
+    window_end: date,
 ) -> list[Pattern]:
-    if not budget.end_date or not budget.start_date:
+    period_length = (window_end - window_start).days
+    if period_length <= 0:
         return []
 
-    period_length = (budget.end_date - budget.start_date).days
     last_quarter = pd.Timestamp(
-        budget.end_date - relativedelta(days=period_length // 4)
+        window_end - relativedelta(days=period_length // 4)
     )
 
     end_total = df[df["date"] >= last_quarter]["amount"].sum()

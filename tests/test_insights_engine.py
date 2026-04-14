@@ -572,8 +572,7 @@ class TestDetectEndOfMonthConcentration:
             {"amount": 500.0, "date": date(2026, 4, 25)},  # in last quarter
         ]
         df = _expense_df(rows)
-        budget = make_budget()
-        result = detect_end_of_month_concentration(df, budget)
+        result = detect_end_of_month_concentration(df, date(2026, 4, 1), date(2026, 4, 30))
         assert len(result) == 1
         assert result[0].type == "end_of_month_concentration"
         assert "%" in result[0].message
@@ -581,7 +580,7 @@ class TestDetectEndOfMonthConcentration:
     def test_even_distribution_no_pattern(self):
         rows = [{"amount": 10.0, "date": date(2026, 4, d)} for d in range(1, 29)]
         df = _expense_df(rows)
-        assert detect_end_of_month_concentration(df, make_budget()) == []
+        assert detect_end_of_month_concentration(df, date(2026, 4, 1), date(2026, 4, 30)) == []
 
     def test_exactly_40pct_no_pattern(self):
         # total=100, end_total=40 → ratio == 0.40, strict > fails
@@ -590,18 +589,12 @@ class TestDetectEndOfMonthConcentration:
             {"amount": 40.0, "date": date(2026, 4, 25)},
         ]
         df = _expense_df(rows)
-        assert detect_end_of_month_concentration(df, make_budget()) == []
+        assert detect_end_of_month_concentration(df, date(2026, 4, 1), date(2026, 4, 30)) == []
 
-    def test_no_start_or_end_date_returns_empty(self):
+    def test_zero_period_length_returns_empty(self):
+        # window_start == window_end → period_length == 0 → returns []
         df = _expense_df([{"amount": 10.0, "date": date(2026, 4, 1)}])
-
-        # BudgetRow requires start/end; simulate by monkey-constructing a
-        # minimal object that has the fields equal to falsy values.
-        class _Budget:
-            start_date = None
-            end_date = None
-
-        assert detect_end_of_month_concentration(df, _Budget()) == []
+        assert detect_end_of_month_concentration(df, date(2026, 4, 1), date(2026, 4, 1)) == []
 
     def test_pct_formatting_no_syntax_error(self):
         # Regression: the old code had `:.1f * 100` which raised ValueError.
@@ -610,7 +603,7 @@ class TestDetectEndOfMonthConcentration:
             {"amount": 500.0, "date": date(2026, 4, 25)},
         ]
         df = _expense_df(rows)
-        result = detect_end_of_month_concentration(df, make_budget())
+        result = detect_end_of_month_concentration(df, date(2026, 4, 1), date(2026, 4, 30))
         # Message includes a percent like "98.0%"
         assert result[0].message.endswith(
             "% of spending in the last quarter of the month"
@@ -621,7 +614,7 @@ class TestDetectEndOfMonthConcentration:
         # If it weren't, this would raise a TypeError.
         rows = [{"amount": 500.0, "date": date(2026, 4, 25)}]
         df = _expense_df(rows)
-        result = detect_end_of_month_concentration(df, make_budget())
+        result = detect_end_of_month_concentration(df, date(2026, 4, 1), date(2026, 4, 30))
         assert len(result) == 1
 
     def test_short_budget_period(self):
@@ -631,8 +624,7 @@ class TestDetectEndOfMonthConcentration:
             {"amount": 500.0, "date": date(2026, 4, 3)},
         ]
         df = _expense_df(rows)
-        budget = make_budget(start_date=date(2026, 4, 1), end_date=date(2026, 4, 3))
-        result = detect_end_of_month_concentration(df, budget)
+        result = detect_end_of_month_concentration(df, date(2026, 4, 1), date(2026, 4, 3))
         # Only the Apr 3 row is >= Apr 3, so it hits 98%.
         assert len(result) == 1
 
@@ -710,10 +702,10 @@ class TestDetectFrequentCategories:
 
 class TestDetectPatterns:
     def test_empty_expenses(self):
-        assert detect_patterns([], make_budget()) == []
+        assert detect_patterns([], date(2026, 4, 1), date(2026, 4, 30)) == []
 
     def test_income_only_returns_empty(self):
-        assert detect_patterns([make_income(500.0)], make_budget()) == []
+        assert detect_patterns([make_income(500.0)], date(2026, 4, 1), date(2026, 4, 30)) == []
 
     def test_aggregates_from_sub_detectors(self):
         # Build a dataset that triggers all three sub-detectors:
@@ -749,7 +741,7 @@ class TestDetectPatterns:
                     category_id="cat-g",
                 )
             )
-        result = detect_patterns(txs, make_budget())
+        result = detect_patterns(txs, date(2026, 4, 1), date(2026, 4, 30))
         types = {p.type for p in result}
         assert "end_of_month_concentration" in types
         assert "frequent_category" in types
