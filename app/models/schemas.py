@@ -218,13 +218,6 @@ class AIInsightsResponse(BaseModel):
 
 
 # ── Query params ──────────────────────────────────────────────────────────────
-
-
-class InsightPeriod(BaseModel):
-    year: int
-    month: int
-
-
 class InsightsQuery(BaseModel):
     budget_id: str
     window: InsightWindow
