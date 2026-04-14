@@ -1,14 +1,173 @@
+# Insights Engine Test Suite Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Add a production-grade test suite (~80 tests) for `app/services/insights_engine.py` with branch + edge-case coverage, using shared `conftest.py` factories and one test class per public function.
+
+**Architecture:** `tests/conftest.py` exports factories (`make_expense`, `make_income`, `make_allocation`, `make_budget`). `tests/test_insights_engine.py` is rewritten with `TestXxx` classes, one per public engine function. No new runtime deps; `ruff` + `pytest` pinned in `requirements-dev.txt`.
+
+**Tech Stack:** Python 3.12, pytest 9.x, ruff 0.15.x, Pydantic v2, pandas, numpy.
+
+**User constraint:** Do NOT run `git commit` at any step. User reviews diffs and commits on their own cadence. Each task ends at "run tests green", not at a commit.
+
+---
+
+## Task 1: Dev dependencies file
+
+**Files:**
+- Create: `requirements-dev.txt`
+
+- [ ] **Step 1: Write the file**
+
+```
+-r requirements.txt
+pytest==9.0.3
+ruff==0.15.10
+```
+
+- [ ] **Step 2: Verify venv has both**
+
+Run: `venv/bin/python -m pytest --version && venv/bin/python -m ruff --version`
+Expected: `pytest 9.0.3` and `ruff 0.15.10` printed.
+
+---
+
+## Task 2: conftest.py with shared factories
+
+**Files:**
+- Create: `tests/conftest.py`
+
+- [ ] **Step 1: Write the factories**
+
+```python
+"""Shared test factories for the insights engine suite.
+
+Every factory takes keyword-only overrides with sensible defaults, so tests
+override only the fields they care about.
+"""
+from __future__ import annotations
+
+import uuid
+from datetime import date
+from typing import Optional
+
+from app.models.schemas import (
+    AllocationRow,
+    BudgetRow,
+    TransactionRow,
+)
+
+
+def _uid(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex[:8]}"
+
+
+def make_expense(
+    amount: float = 10.0,
+    *,
+    category_id: Optional[str] = "cat-groceries",
+    category_name: Optional[str] = "Groceries",
+    category_icon: Optional[str] = None,
+    category_color: Optional[str] = None,
+    transaction_date: date = date(2026, 4, 1),
+    merchant: Optional[str] = None,
+    description: Optional[str] = None,
+    id: Optional[str] = None,
+    user_id: str = "user-1",
+) -> TransactionRow:
+    return TransactionRow(
+        id=id or _uid("tx"),
+        user_id=user_id,
+        category_id=category_id,
+        amount=amount,
+        transaction_date=transaction_date,
+        type="expense",
+        merchant=merchant,
+        description=description,
+        category_name=category_name,
+        category_icon=category_icon,
+        category_color=category_color,
+    )
+
+
+def make_income(
+    amount: float = 1000.0,
+    *,
+    transaction_date: date = date(2026, 4, 1),
+    id: Optional[str] = None,
+    user_id: str = "user-1",
+) -> TransactionRow:
+    return TransactionRow(
+        id=id or _uid("tx"),
+        user_id=user_id,
+        category_id="cat-salary",
+        amount=amount,
+        transaction_date=transaction_date,
+        type="income",
+        category_name="Salary",
+    )
+
+
+def make_allocation(
+    *,
+    category_id: str = "cat-groceries",
+    amount: float = 100.0,
+    budget_id: str = "budget-1",
+    id: Optional[str] = None,
+    alert_threshold: int = 80,
+) -> AllocationRow:
+    return AllocationRow(
+        id=id or _uid("alloc"),
+        budget_id=budget_id,
+        category_id=category_id,
+        amount=amount,
+        alert_threshold=alert_threshold,
+    )
+
+
+def make_budget(
+    *,
+    start_date: date = date(2026, 4, 1),
+    end_date: date = date(2026, 4, 30),
+    amount: float = 5000.0,
+    id: Optional[str] = None,
+    user_id: str = "user-1",
+) -> BudgetRow:
+    return BudgetRow(
+        id=id or _uid("budget"),
+        user_id=user_id,
+        name="April 2026",
+        period="monthly",
+        amount=amount,
+        start_date=start_date,
+        end_date=end_date,
+    )
+```
+
+- [ ] **Step 2: Verify imports resolve**
+
+Run: `venv/bin/python -c "from tests.conftest import make_expense, make_income, make_allocation, make_budget; print(make_expense(50.0))"`
+Expected: prints a `TransactionRow` repr with `amount=50.0`.
+
+---
+
+## Task 3: Replace test module with class scaffolding
+
+**Files:**
+- Modify: `tests/test_insights_engine.py` (full rewrite)
+
+- [ ] **Step 1: Overwrite the file with the scaffold**
+
+```python
 """Production-grade tests for app/services/insights_engine.py.
 
 Organized as one class per public engine function. Shared factories live in
 tests/conftest.py.
 """
-
 from __future__ import annotations
 
 from datetime import date
 
-import pandas as pd
 import pytest
 
 from app.models.schemas import (
@@ -39,9 +198,25 @@ from tests.conftest import (
     make_income,
 )
 
+
 # Each TestXxx class is implemented in Tasks 4-15.
+```
 
+- [ ] **Step 2: Verify it collects cleanly**
 
+Run: `venv/bin/python -m pytest tests/test_insights_engine.py --collect-only -q`
+Expected: `0 tests collected` (no errors, imports resolve).
+
+---
+
+## Task 4: TestCalculateTotals (6 tests)
+
+**Files:**
+- Modify: `tests/test_insights_engine.py` (append class)
+
+- [ ] **Step 1: Append the class**
+
+```python
 class TestCalculateTotals:
     def test_mixed_income_and_expenses(self):
         txs = [make_income(1000.0), make_expense(200.0), make_expense(300.0)]
@@ -77,8 +252,23 @@ class TestCalculateTotals:
         txs = [make_income(100.0), make_expense(150.0)]
         result = calculate_totals(txs)
         assert result.savings_rate == pytest.approx(-50.0)
+```
 
+- [ ] **Step 2: Run and verify all pass**
 
+Run: `venv/bin/python -m pytest tests/test_insights_engine.py::TestCalculateTotals -v`
+Expected: 6 passed.
+
+---
+
+## Task 5: TestCategoryBreakdown (10 tests)
+
+**Files:**
+- Modify: `tests/test_insights_engine.py` (append class)
+
+- [ ] **Step 1: Append the class**
+
+```python
 class TestCategoryBreakdown:
     def test_empty_returns_empty(self):
         assert category_breakdown([], []) == []
@@ -152,8 +342,23 @@ class TestCategoryBreakdown:
         result = category_breakdown(txs, [])
         assert result[0].icon == "🛒"
         assert result[0].color == "#fff"
+```
 
+- [ ] **Step 2: Run and verify all pass**
 
+Run: `venv/bin/python -m pytest tests/test_insights_engine.py::TestCategoryBreakdown -v`
+Expected: 10 passed.
+
+---
+
+## Task 6: TestComparePeriods (6 tests)
+
+**Files:**
+- Modify: `tests/test_insights_engine.py` (append class)
+
+- [ ] **Step 1: Append the class**
+
+```python
 class TestComparePeriods:
     def test_both_empty(self):
         assert compare_periods([], []) == {
@@ -189,8 +394,23 @@ class TestComparePeriods:
         result = compare_periods([make_expense(200.0)], [make_expense(100.0)])
         assert result["income_change_pct"] is None
         assert result["expenses_change_pct"] == pytest.approx(100.0)
+```
 
+- [ ] **Step 2: Run and verify all pass**
 
+Run: `venv/bin/python -m pytest tests/test_insights_engine.py::TestComparePeriods -v`
+Expected: 6 passed.
+
+---
+
+## Task 7: TestSumExpensesByCategory (5 tests)
+
+**Files:**
+- Modify: `tests/test_insights_engine.py` (append class)
+
+- [ ] **Step 1: Append the class**
+
+```python
 class TestSumExpensesByCategory:
     def test_empty(self):
         assert sum_expenses_by_category([]) == {}
@@ -217,8 +437,23 @@ class TestSumExpensesByCategory:
         txs = [make_income(1000.0), make_expense(50.0, category_id="a")]
         result = sum_expenses_by_category(txs)
         assert result == {"a": pytest.approx(50.0)}
+```
 
+- [ ] **Step 2: Run and verify all pass**
 
+Run: `venv/bin/python -m pytest tests/test_insights_engine.py::TestSumExpensesByCategory -v`
+Expected: 5 passed.
+
+---
+
+## Task 8: TestDetectCategorySpikes (12 tests)
+
+**Files:**
+- Modify: `tests/test_insights_engine.py` (append class)
+
+- [ ] **Step 1: Append the class**
+
+```python
 class TestDetectCategorySpikes:
     def _tx(self, amount, *, category_id="cat-g", category_name="Groceries"):
         return make_expense(
@@ -259,19 +494,25 @@ class TestDetectCategorySpikes:
     def test_spike_boundary_exactly_at_threshold(self):
         # change == SPIKE_THRESHOLD (0.30) → NOT a spike (strict >)
         current_amt = 100.0 * (1 + SPIKE_THRESHOLD)
-        result = detect_category_spikes([self._tx(current_amt)], [self._tx(100.0)])
+        result = detect_category_spikes(
+            [self._tx(current_amt)], [self._tx(100.0)]
+        )
         assert result == []
 
     def test_spike_just_above_threshold(self):
         current_amt = 100.0 * (1 + SPIKE_THRESHOLD) + 0.01
-        result = detect_category_spikes([self._tx(current_amt)], [self._tx(100.0)])
+        result = detect_category_spikes(
+            [self._tx(current_amt)], [self._tx(100.0)]
+        )
         assert len(result) == 1
         assert result[0].type == "spike"
 
     def test_high_severity_boundary(self):
         # change == HIGH_SEVERITY_THRESHOLD (0.50) → still medium (strict >)
         current_amt = 100.0 * (1 + HIGH_SEVERITY_THRESHOLD)
-        result = detect_category_spikes([self._tx(current_amt)], [self._tx(100.0)])
+        result = detect_category_spikes(
+            [self._tx(current_amt)], [self._tx(100.0)]
+        )
         assert result[0].severity == "medium"
 
     def test_decrease_no_anomaly(self):
@@ -294,8 +535,23 @@ class TestDetectCategorySpikes:
     def test_new_category_message_has_dollar(self):
         result = detect_category_spikes([self._tx(75.0)], [])
         assert "$75" in result[0].message
+```
 
+- [ ] **Step 2: Run and verify all pass**
 
+Run: `venv/bin/python -m pytest tests/test_insights_engine.py::TestDetectCategorySpikes -v`
+Expected: 12 passed.
+
+---
+
+## Task 9: TestDetectBudgetOverspending (8 tests)
+
+**Files:**
+- Modify: `tests/test_insights_engine.py` (append class)
+
+- [ ] **Step 1: Append the class**
+
+```python
 class TestDetectBudgetOverspending:
     def _tx(self, amount, *, category_id="cat-g", category_name="Groceries"):
         return make_expense(
@@ -359,8 +615,23 @@ class TestDetectBudgetOverspending:
         ]
         result = detect_budget_overspending(txs, allocs)
         assert len(result) == 2
+```
 
+- [ ] **Step 2: Run and verify all pass**
 
+Run: `venv/bin/python -m pytest tests/test_insights_engine.py::TestDetectBudgetOverspending -v`
+Expected: 8 passed.
+
+---
+
+## Task 10: TestDetectLargeSingleTransactions (7 tests)
+
+**Files:**
+- Modify: `tests/test_insights_engine.py` (append class)
+
+- [ ] **Step 1: Append the class**
+
+```python
 class TestDetectLargeSingleTransactions:
     def test_fewer_than_five_expenses_returns_empty(self):
         txs = [make_expense(100.0) for _ in range(4)]
@@ -412,15 +683,28 @@ class TestDetectLargeSingleTransactions:
         assert result == []
 
     def test_multiple_outliers(self):
-        # Need enough "normal" rows that the two outliers both exceed
-        # mean + 2*std(ddof=1). With 20 uniform baseline rows, std stays small.
-        txs = [make_expense(100.0) for _ in range(20)]
+        txs = [make_expense(100.0) for _ in range(5)]
         txs.append(make_expense(5000.0, merchant="A"))
         txs.append(make_expense(6000.0, merchant="B"))
         result = detect_large_single_transactions(txs)
         assert len(result) == 2
+```
 
+- [ ] **Step 2: Run and verify all pass**
 
+Run: `venv/bin/python -m pytest tests/test_insights_engine.py::TestDetectLargeSingleTransactions -v`
+Expected: 7 passed.
+
+---
+
+## Task 11: TestDetectAnomalies (orchestrator, 3 tests)
+
+**Files:**
+- Modify: `tests/test_insights_engine.py` (append class)
+
+- [ ] **Step 1: Append the class**
+
+```python
 class TestDetectAnomalies:
     def test_empty_inputs_empty_output(self):
         assert detect_anomalies([], [], []) == []
@@ -441,15 +725,42 @@ class TestDetectAnomalies:
     def test_order_spikes_then_budget_then_large(self):
         # 5 uniform + 1 outlier; also a new_category anomaly
         current = [
-            make_expense(100.0, category_id="a", category_name="A") for _ in range(5)
+            make_expense(100.0, category_id="a", category_name="A")
+            for _ in range(5)
         ]
-        current.append(make_expense(5000.0, category_id="a", category_name="A"))
+        current.append(
+            make_expense(5000.0, category_id="a", category_name="A")
+        )
         previous = []
         result = detect_anomalies(current, previous, [])
         # new_category (from spikes) must come before large_single
-        new_cat_idx = next(i for i, a in enumerate(result) if a.type == "new_category")
-        large_idx = next(i for i, a in enumerate(result) if a.type == "large_single")
+        new_cat_idx = next(
+            i for i, a in enumerate(result) if a.type == "new_category"
+        )
+        large_idx = next(
+            i for i, a in enumerate(result) if a.type == "large_single"
+        )
         assert new_cat_idx < large_idx
+```
+
+- [ ] **Step 2: Run and verify all pass**
+
+Run: `venv/bin/python -m pytest tests/test_insights_engine.py::TestDetectAnomalies -v`
+Expected: 3 passed.
+
+---
+
+## Task 12: TestDetectWeekendSpend (8 tests)
+
+**Files:**
+- Modify: `tests/test_insights_engine.py` (append class)
+
+- [ ] **Step 1: Append the class**
+
+Note: `detect_weekend_spend` takes a `pd.DataFrame`, not a list. We build it the same way `detect_patterns` does.
+
+```python
+import pandas as pd
 
 
 def _expense_df(rows):
@@ -472,10 +783,10 @@ class TestDetectWeekendSpend:
 
     def test_weekend_heavy_produces_pattern(self):
         rows = [
-            {"amount": 300.0, "date": date(2026, 4, 4)},  # Sat
-            {"amount": 300.0, "date": date(2026, 4, 5)},  # Sun
-            {"amount": 50.0, "date": date(2026, 4, 6)},  # Mon
-            {"amount": 50.0, "date": date(2026, 4, 7)},  # Tue
+            {"amount": 300.0, "date": date(2026, 4, 4)},   # Sat
+            {"amount": 300.0, "date": date(2026, 4, 5)},   # Sun
+            {"amount": 50.0, "date": date(2026, 4, 6)},    # Mon
+            {"amount": 50.0, "date": date(2026, 4, 7)},    # Tue
         ]
         df = _expense_df(rows)
         total = sum(r["amount"] for r in rows)
@@ -497,7 +808,7 @@ class TestDetectWeekendSpend:
     def test_weekend_under_10pct_of_total_no_pattern(self):
         # Weekend daily spike but weekend total is a tiny slice of overall
         rows = [
-            {"amount": 10.0, "date": date(2026, 4, 4)},  # Sat, 1 day weekend
+            {"amount": 10.0, "date": date(2026, 4, 4)},     # Sat, 1 day weekend
         ]
         # Huge weekday total to suppress the 10% rule
         for day in range(6, 30):
@@ -559,8 +870,23 @@ class TestDetectWeekendSpend:
         total = 383.333
         result = detect_weekend_spend(df, total)
         assert result[0].data["weekend_daily"] == pytest.approx(333.33)
+```
 
+- [ ] **Step 2: Run and verify all pass**
 
+Run: `venv/bin/python -m pytest tests/test_insights_engine.py::TestDetectWeekendSpend -v`
+Expected: 8 passed.
+
+---
+
+## Task 13: TestDetectEndOfMonthConcentration (7 tests)
+
+**Files:**
+- Modify: `tests/test_insights_engine.py` (append class)
+
+- [ ] **Step 1: Append the class**
+
+```python
 class TestDetectEndOfMonthConcentration:
     # Reuses _expense_df from Task 12 (same module).
     # April 2026: 30-day budget, last quarter = Apr 23-30 (period_length//4 = 7)
@@ -594,7 +920,6 @@ class TestDetectEndOfMonthConcentration:
 
     def test_no_start_or_end_date_returns_empty(self):
         df = _expense_df([{"amount": 10.0, "date": date(2026, 4, 1)}])
-
         # BudgetRow requires start/end; simulate by monkey-constructing a
         # minimal object that has the fields equal to falsy values.
         class _Budget:
@@ -631,12 +956,29 @@ class TestDetectEndOfMonthConcentration:
             {"amount": 500.0, "date": date(2026, 4, 3)},
         ]
         df = _expense_df(rows)
-        budget = make_budget(start_date=date(2026, 4, 1), end_date=date(2026, 4, 3))
+        budget = make_budget(
+            start_date=date(2026, 4, 1), end_date=date(2026, 4, 3)
+        )
         result = detect_end_of_month_concentration(df, budget)
         # Only the Apr 3 row is >= Apr 3, so it hits 98%.
         assert len(result) == 1
+```
 
+- [ ] **Step 2: Run and verify all pass**
 
+Run: `venv/bin/python -m pytest tests/test_insights_engine.py::TestDetectEndOfMonthConcentration -v`
+Expected: 7 passed.
+
+---
+
+## Task 14: TestDetectFrequentCategories (7 tests)
+
+**Files:**
+- Modify: `tests/test_insights_engine.py` (append class)
+
+- [ ] **Step 1: Append the class**
+
+```python
 class TestDetectFrequentCategories:
     def test_empty_df(self):
         df = _expense_df([])
@@ -706,8 +1048,23 @@ class TestDetectFrequentCategories:
         df = _expense_df(rows)
         result = detect_frequent_categories(df)
         assert result[0].type == "frequent_category"
+```
 
+- [ ] **Step 2: Run and verify all pass**
 
+Run: `venv/bin/python -m pytest tests/test_insights_engine.py::TestDetectFrequentCategories -v`
+Expected: 7 passed.
+
+---
+
+## Task 15: TestDetectPatterns (orchestrator, 3 tests)
+
+**Files:**
+- Modify: `tests/test_insights_engine.py` (append class)
+
+- [ ] **Step 1: Append the class**
+
+```python
 class TestDetectPatterns:
     def test_empty_expenses(self):
         assert detect_patterns([], make_budget()) == []
@@ -753,8 +1110,23 @@ class TestDetectPatterns:
         types = {p.type for p in result}
         assert "end_of_month_concentration" in types
         assert "frequent_category" in types
+```
 
+- [ ] **Step 2: Run and verify all pass**
 
+Run: `venv/bin/python -m pytest tests/test_insights_engine.py::TestDetectPatterns -v`
+Expected: 3 passed.
+
+---
+
+## Task 16: Literal type validation regression test
+
+**Files:**
+- Modify: `tests/test_insights_engine.py` (append class)
+
+- [ ] **Step 1: Append the class**
+
+```python
 class TestLiteralTypeValidation:
     def test_anomaly_rejects_bad_type(self):
         from pydantic import ValidationError
@@ -785,3 +1157,46 @@ class TestLiteralTypeValidation:
             pct_of_total=100.0,
         )
         assert row.transaction_count == 3
+```
+
+- [ ] **Step 2: Run and verify all pass**
+
+Run: `venv/bin/python -m pytest tests/test_insights_engine.py::TestLiteralTypeValidation -v`
+Expected: 4 passed.
+
+---
+
+## Task 17: Full suite + lint gate
+
+**Files:**
+- (validation only)
+
+- [ ] **Step 1: Run the full suite**
+
+Run: `venv/bin/python -m pytest -v`
+Expected: ~83 passed (6+10+6+5+12+8+7+3+8+7+7+3+4 = 86 tests). No failures.
+
+- [ ] **Step 2: Run ruff check**
+
+Run: `venv/bin/python -m ruff check app/ tests/`
+Expected: `All checks passed!`
+
+- [ ] **Step 3: Run ruff format check**
+
+Run: `venv/bin/python -m ruff format --check app/ tests/`
+Expected: `N files already formatted`.
+
+- [ ] **Step 4: Stop. Do NOT commit.**
+
+Per user directive, no `git commit` at any stage. Report status to the user and wait for review.
+
+---
+
+## Self-review notes
+
+- Every task points to exact paths.
+- Every test body is shown inline.
+- Task 12 defines `_expense_df` once; Tasks 13–14 reuse it via module scope.
+- Task 16 covers Literal regressions + `transaction_count` kwarg regression.
+- Total test count: 86 (spec estimated ~80; the overage is from Literal tests + extra regression cases — acceptable).
+- No commits anywhere per user directive.
