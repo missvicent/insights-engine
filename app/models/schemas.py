@@ -21,6 +21,15 @@ PatternType = Literal[
     "recurring_growth",
 ]
 
+InsightWindow = Literal[
+    "1m",
+    "3m",
+    "6m",
+    "1y",
+    "current_year",
+    "last_year",
+]
+
 
 class TransactionRow(BaseModel):
     id: str
@@ -211,3 +220,8 @@ class AIInsightsResponse(BaseModel):
 class InsightPeriod(BaseModel):
     year: int
     month: int
+
+
+class InsightsQuery(BaseModel):
+    budget_id: str
+    window: InsightWindow
