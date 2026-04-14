@@ -6,6 +6,7 @@ Input: raw DB rows
 Output: InsightSummary
 """
 
+import calendar
 from datetime import date, timedelta
 
 import numpy as np
@@ -64,8 +65,6 @@ def _clamp_to_month_end(year: int, month: int, day: int) -> date:
 
     Handles Feb 29 → Feb 28 when moving into a non-leap year.
     """
-    import calendar
-
     last_day = calendar.monthrange(year, month)[1]
     return date(year, month, min(day, last_day))
 
