@@ -16,6 +16,8 @@ from app.models.schemas import (
     BudgetRow,
     CategoryBreakdown,
     FinancialTotals,
+    GoalRow,
+    GoalProgress,
     Pattern,
     TransactionRow,
 )
@@ -386,3 +388,12 @@ def detect_frequent_categories(df: pd.DataFrame) -> list[Pattern]:
             )
 
     return patterns
+
+
+def compute_goal_progress(goals: list[GoalRow]) -> list[GoalProgress]:
+    today = date.today()
+    result: list[GoalProgress] = []
+    for goal in goals:
+        if goal.is_achieved:
+            continue
+        remaining_dates = (goal.target_date - today).days
