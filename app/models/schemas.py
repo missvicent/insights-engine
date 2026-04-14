@@ -21,6 +21,15 @@ PatternType = Literal[
     "recurring_growth",
 ]
 
+InsightWindow = Literal[
+    "1m",
+    "3m",
+    "6m",
+    "1y",
+    "current_year",
+    "last_year",
+]
+
 
 class TransactionRow(BaseModel):
     id: str
@@ -162,6 +171,9 @@ class InsightSummary(BaseModel):
     This is what gets sent to the AI layer — not raw transactions.
     """
 
+    budget_id: str
+    budget_name: str
+
     period_label: str  # e.g. "December 2025"
     total_income: float
     total_expenses: float
@@ -178,7 +190,7 @@ class InsightSummary(BaseModel):
     goals: list[GoalProgress]
     debt: Optional[DebtSummary] = None
 
-    # raw counts for contex
+    # raw counts for context
     transaction_count: int
     recurring_count: int
 
@@ -211,3 +223,8 @@ class AIInsightsResponse(BaseModel):
 class InsightPeriod(BaseModel):
     year: int
     month: int
+
+
+class InsightsQuery(BaseModel):
+    budget_id: str
+    window: InsightWindow

@@ -13,6 +13,7 @@ from typing import Optional
 from app.models.schemas import (
     AllocationRow,
     BudgetRow,
+    GoalRow,
     TransactionRow,
 )
 
@@ -100,4 +101,25 @@ def make_budget(
         amount=amount,
         start_date=start_date,
         end_date=end_date,
+    )
+
+
+def make_goal(
+    *,
+    name: str = "Emergency fund",
+    target_amount: float = 1000.0,
+    current_amount: float = 250.0,
+    target_date: Optional[date] = None,
+    is_achieved: bool = False,
+    id: Optional[str] = None,
+) -> "GoalRow":
+    from app.models.schemas import GoalRow
+
+    return GoalRow(
+        id=id or _uid("goal"),
+        name=name,
+        target_amount=target_amount,
+        current_amount=current_amount,
+        target_date=target_date,
+        is_achieved=is_achieved,
     )

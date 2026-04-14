@@ -70,36 +70,49 @@ def fetch_transactions(
     return rows
 
 
-def fetch_budgets(
-    user_id: str,
-    db: Client | None = None,
-) -> tuple[list[BudgetRow], list[AllocationRow]]:
+class BudgetNotFound(Exception):
+    """Raised when a budget_id does not exist or is not owned by the user."""
 
+
+def fetch_budget(
+    user_id: str,
+    budget_id: str,
+    db: Client | None = None,
+) -> tuple[BudgetRow, list[AllocationRow]]:
+    """Fetch one budget (authorized to user_id) and its allocations.
+
+    Raises BudgetNotFound when the row is missing or not owned by the user.
+    """
     if db is None:
         db = get_supabase()
 
-    response = db.table("budgets").select("*").eq("user_id", user_id).execute()
+    budget_response = (
+        db.table("budgets")
+        .select("*")
+        .eq("id", budget_id)
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
 
-    budgets = [BudgetRow(**row) for row in response.data]
+    if not budget_response.data:
+        raise BudgetNotFound(budget_id)
 
-    if not budgets:
-        return [], []
-
-    budget_ids = [b.id for b in budgets]
+    budget = BudgetRow(**budget_response.data[0])
 
     alloc_response = (
         db.table("allocations")
         .select("*, categories(name)")
-        .in_("budget_id", budget_ids)
+        .eq("budget_id", budget.id)
         .execute()
     )
 
-    allocations = []
+    allocations: list[AllocationRow] = []
     for alloc in alloc_response.data:
         cat = alloc.pop("categories", None) or {}
         allocations.append(AllocationRow(**alloc, category_name=cat.get("name")))
 
-    return budgets, allocations
+    return budget, allocations
 
 
 def fetch_goals(

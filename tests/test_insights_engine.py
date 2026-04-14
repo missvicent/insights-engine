@@ -572,8 +572,7 @@ class TestDetectEndOfMonthConcentration:
             {"amount": 500.0, "date": date(2026, 4, 25)},  # in last quarter
         ]
         df = _expense_df(rows)
-        budget = make_budget()
-        result = detect_end_of_month_concentration(df, budget)
+        result = detect_end_of_month_concentration(df, date(2026, 4, 1), date(2026, 4, 30))
         assert len(result) == 1
         assert result[0].type == "end_of_month_concentration"
         assert "%" in result[0].message
@@ -581,7 +580,7 @@ class TestDetectEndOfMonthConcentration:
     def test_even_distribution_no_pattern(self):
         rows = [{"amount": 10.0, "date": date(2026, 4, d)} for d in range(1, 29)]
         df = _expense_df(rows)
-        assert detect_end_of_month_concentration(df, make_budget()) == []
+        assert detect_end_of_month_concentration(df, date(2026, 4, 1), date(2026, 4, 30)) == []
 
     def test_exactly_40pct_no_pattern(self):
         # total=100, end_total=40 → ratio == 0.40, strict > fails
@@ -590,18 +589,12 @@ class TestDetectEndOfMonthConcentration:
             {"amount": 40.0, "date": date(2026, 4, 25)},
         ]
         df = _expense_df(rows)
-        assert detect_end_of_month_concentration(df, make_budget()) == []
+        assert detect_end_of_month_concentration(df, date(2026, 4, 1), date(2026, 4, 30)) == []
 
-    def test_no_start_or_end_date_returns_empty(self):
+    def test_zero_period_length_returns_empty(self):
+        # window_start == window_end → period_length == 0 → returns []
         df = _expense_df([{"amount": 10.0, "date": date(2026, 4, 1)}])
-
-        # BudgetRow requires start/end; simulate by monkey-constructing a
-        # minimal object that has the fields equal to falsy values.
-        class _Budget:
-            start_date = None
-            end_date = None
-
-        assert detect_end_of_month_concentration(df, _Budget()) == []
+        assert detect_end_of_month_concentration(df, date(2026, 4, 1), date(2026, 4, 1)) == []
 
     def test_pct_formatting_no_syntax_error(self):
         # Regression: the old code had `:.1f * 100` which raised ValueError.
@@ -610,7 +603,7 @@ class TestDetectEndOfMonthConcentration:
             {"amount": 500.0, "date": date(2026, 4, 25)},
         ]
         df = _expense_df(rows)
-        result = detect_end_of_month_concentration(df, make_budget())
+        result = detect_end_of_month_concentration(df, date(2026, 4, 1), date(2026, 4, 30))
         # Message includes a percent like "98.0%"
         assert result[0].message.endswith(
             "% of spending in the last quarter of the month"
@@ -621,7 +614,7 @@ class TestDetectEndOfMonthConcentration:
         # If it weren't, this would raise a TypeError.
         rows = [{"amount": 500.0, "date": date(2026, 4, 25)}]
         df = _expense_df(rows)
-        result = detect_end_of_month_concentration(df, make_budget())
+        result = detect_end_of_month_concentration(df, date(2026, 4, 1), date(2026, 4, 30))
         assert len(result) == 1
 
     def test_short_budget_period(self):
@@ -631,8 +624,7 @@ class TestDetectEndOfMonthConcentration:
             {"amount": 500.0, "date": date(2026, 4, 3)},
         ]
         df = _expense_df(rows)
-        budget = make_budget(start_date=date(2026, 4, 1), end_date=date(2026, 4, 3))
-        result = detect_end_of_month_concentration(df, budget)
+        result = detect_end_of_month_concentration(df, date(2026, 4, 1), date(2026, 4, 3))
         # Only the Apr 3 row is >= Apr 3, so it hits 98%.
         assert len(result) == 1
 
@@ -710,10 +702,10 @@ class TestDetectFrequentCategories:
 
 class TestDetectPatterns:
     def test_empty_expenses(self):
-        assert detect_patterns([], make_budget()) == []
+        assert detect_patterns([], date(2026, 4, 1), date(2026, 4, 30)) == []
 
     def test_income_only_returns_empty(self):
-        assert detect_patterns([make_income(500.0)], make_budget()) == []
+        assert detect_patterns([make_income(500.0)], date(2026, 4, 1), date(2026, 4, 30)) == []
 
     def test_aggregates_from_sub_detectors(self):
         # Build a dataset that triggers all three sub-detectors:
@@ -749,7 +741,7 @@ class TestDetectPatterns:
                     category_id="cat-g",
                 )
             )
-        result = detect_patterns(txs, make_budget())
+        result = detect_patterns(txs, date(2026, 4, 1), date(2026, 4, 30))
         types = {p.type for p in result}
         assert "end_of_month_concentration" in types
         assert "frequent_category" in types
@@ -785,3 +777,148 @@ class TestLiteralTypeValidation:
             pct_of_total=100.0,
         )
         assert row.transaction_count == 3
+
+
+class TestResolveWindow:
+    def test_1m(self):
+        from app.services.insights_engine import resolve_window
+
+        today = date(2026, 4, 14)
+        cs, ce, ps, pe = resolve_window("1m", today)
+        assert ce == today
+        assert cs == date(2026, 3, 15)  # today - 30d
+        assert pe == date(2026, 3, 14)
+        assert ps == date(2026, 2, 12)
+
+    def test_3m(self):
+        from app.services.insights_engine import resolve_window
+
+        today = date(2026, 4, 14)
+        cs, ce, ps, pe = resolve_window("3m", today)
+        assert ce == today
+        assert cs == date(2026, 1, 14)  # today - 90d
+        assert pe == date(2026, 1, 13)
+        assert ps == date(2025, 10, 15)
+
+    def test_6m(self):
+        from app.services.insights_engine import resolve_window
+
+        today = date(2026, 4, 14)
+        cs, ce, ps, pe = resolve_window("6m", today)
+        assert (ce - cs).days == 180
+        assert (pe - ps).days == 180
+        assert pe == cs - pd.Timedelta(days=1).to_pytimedelta()
+
+    def test_1y(self):
+        from app.services.insights_engine import resolve_window
+
+        today = date(2026, 4, 14)
+        cs, ce, ps, pe = resolve_window("1y", today)
+        assert (ce - cs).days == 365
+        assert (pe - ps).days == 365
+
+    def test_current_year(self):
+        from app.services.insights_engine import resolve_window
+
+        today = date(2026, 4, 14)
+        cs, ce, ps, pe = resolve_window("current_year", today)
+        assert cs == date(2026, 1, 1)
+        assert ce == today
+        assert ps == date(2025, 1, 1)
+        assert pe == date(2025, 4, 14)
+
+    def test_current_year_leap_edge(self):
+        from app.services.insights_engine import resolve_window
+
+        today = date(2024, 2, 29)
+        _, _, ps, pe = resolve_window("current_year", today)
+        # Prior year has no Feb 29 → clamp to Feb 28
+        assert pe == date(2023, 2, 28)
+        assert ps == date(2023, 1, 1)
+
+    def test_last_year(self):
+        from app.services.insights_engine import resolve_window
+
+        today = date(2026, 4, 14)
+        cs, ce, ps, pe = resolve_window("last_year", today)
+        assert cs == date(2025, 1, 1)
+        assert ce == date(2025, 12, 31)
+        assert ps == date(2024, 1, 1)
+        assert pe == date(2024, 12, 31)
+
+
+class TestBuildSummary:
+    def test_stamps_budget_identity(self):
+        from app.services.insights_engine import build_summary
+        from tests.conftest import make_goal
+
+        budget = make_budget(id="budget-xyz")
+        budget_with_name = budget.model_copy(update={"name": "April 2026"})
+
+        summary = build_summary(
+            budget=budget_with_name,
+            allocations=[],
+            current=[make_income(1000.0), make_expense(200.0)],
+            previous=[make_income(800.0), make_expense(150.0)],
+            goals=[make_goal()],
+            window_start=date(2026, 4, 1),
+            window_end=date(2026, 4, 30),
+        )
+
+        assert summary.budget_id == "budget-xyz"
+        assert summary.budget_name == "April 2026"
+
+    def test_period_label_matches_window(self):
+        from app.services.insights_engine import build_summary
+
+        summary = build_summary(
+            budget=make_budget(),
+            allocations=[],
+            current=[],
+            previous=[],
+            goals=[],
+            window_start=date(2026, 3, 15),
+            window_end=date(2026, 4, 14),
+        )
+
+        assert summary.period_label == "Mar 15 – Apr 14, 2026"
+
+    def test_totals_and_change_pct(self):
+        from app.services.insights_engine import build_summary
+
+        summary = build_summary(
+            budget=make_budget(),
+            allocations=[],
+            current=[make_income(1000.0), make_expense(400.0)],
+            previous=[make_income(800.0), make_expense(200.0)],
+            goals=[],
+            window_start=date(2026, 4, 1),
+            window_end=date(2026, 4, 30),
+        )
+
+        assert summary.total_income == pytest.approx(1000.0)
+        assert summary.total_expenses == pytest.approx(400.0)
+        assert summary.net == pytest.approx(600.0)
+        assert summary.income_change_pct == pytest.approx(25.0)
+        assert summary.expenses_change_pct == pytest.approx(100.0)
+        assert summary.transaction_count == 2
+
+    def test_empty_inputs(self):
+        from app.services.insights_engine import build_summary
+
+        summary = build_summary(
+            budget=make_budget(),
+            allocations=[],
+            current=[],
+            previous=[],
+            goals=[],
+            window_start=date(2026, 4, 1),
+            window_end=date(2026, 4, 30),
+        )
+
+        assert summary.total_income == 0
+        assert summary.total_expenses == 0
+        assert summary.category_breakdown == []
+        assert summary.anomalies == []
+        assert summary.patterns == []
+        assert summary.transaction_count == 0

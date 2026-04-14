@@ -6,6 +6,9 @@ Input: raw DB rows
 Output: InsightSummary
 """
 
+import calendar
+from datetime import date, timedelta
+
 import numpy as np
 import pandas as pd
 from dateutil.relativedelta import relativedelta
@@ -18,12 +21,53 @@ from app.models.schemas import (
     FinancialTotals,
     GoalRow,
     GoalProgress,
+    InsightSummary,
+    InsightWindow,
     Pattern,
     TransactionRow,
 )
 
 SPIKE_THRESHOLD = 0.30
 HIGH_SEVERITY_THRESHOLD = 0.50
+
+
+def resolve_window(
+    window: InsightWindow,
+    today: date,
+) -> tuple[date, date, date, date]:
+    """Return (current_start, current_end, previous_start, previous_end)."""
+    if window in {"1m", "3m", "6m", "1y"}:
+        span_days = {"1m": 30, "3m": 90, "6m": 180, "1y": 365}[window]
+        current_end = today
+        current_start = today - timedelta(days=span_days)
+        previous_end = current_start - timedelta(days=1)
+        previous_start = previous_end - timedelta(days=span_days)
+        return current_start, current_end, previous_start, previous_end
+
+    if window == "current_year":
+        current_start = date(today.year, 1, 1)
+        current_end = today
+        previous_start = date(today.year - 1, 1, 1)
+        previous_end = _clamp_to_month_end(today.year - 1, today.month, today.day)
+        return current_start, current_end, previous_start, previous_end
+
+    if window == "last_year":
+        current_start = date(today.year - 1, 1, 1)
+        current_end = date(today.year - 1, 12, 31)
+        previous_start = date(today.year - 2, 1, 1)
+        previous_end = date(today.year - 2, 12, 31)
+        return current_start, current_end, previous_start, previous_end
+
+    raise ValueError(f"unknown window: {window}")
+
+
+def _clamp_to_month_end(year: int, month: int, day: int) -> date:
+    """Build a date, clamping day to the last valid day of that month.
+
+    Handles Feb 29 → Feb 28 when moving into a non-leap year.
+    """
+    last_day = calendar.monthrange(year, month)[1]
+    return date(year, month, min(day, last_day))
 
 
 def calculate_totals(transactions: list[TransactionRow]) -> FinancialTotals:
@@ -266,7 +310,9 @@ def detect_large_single_transactions(
 
 
 def detect_patterns(
-    transactions: list[TransactionRow], budget: BudgetRow
+    transactions: list[TransactionRow],
+    window_start: date,
+    window_end: date,
 ) -> list[Pattern]:
     expenses = [t for t in transactions if t.type == "expense"]
     if not expenses:
@@ -288,7 +334,7 @@ def detect_patterns(
 
     return [
         *detect_weekend_spend(df, total_expenses),
-        *detect_end_of_month_concentration(df, budget),
+        *detect_end_of_month_concentration(df, window_start, window_end),
         *detect_frequent_categories(df),
     ]
 
@@ -329,14 +375,16 @@ def detect_weekend_spend(df: pd.DataFrame, total_expenses: float) -> list[Patter
 
 
 def detect_end_of_month_concentration(
-    df: pd.DataFrame, budget: BudgetRow
+    df: pd.DataFrame,
+    window_start: date,
+    window_end: date,
 ) -> list[Pattern]:
-    if not budget.end_date or not budget.start_date:
+    period_length = (window_end - window_start).days
+    if period_length <= 0:
         return []
 
-    period_length = (budget.end_date - budget.start_date).days
     last_quarter = pd.Timestamp(
-        budget.end_date - relativedelta(days=period_length // 4)
+        window_end - relativedelta(days=period_length // 4)
     )
 
     end_total = df[df["date"] >= last_quarter]["amount"].sum()
@@ -391,9 +439,47 @@ def detect_frequent_categories(df: pd.DataFrame) -> list[Pattern]:
 
 
 def compute_goal_progress(goals: list[GoalRow]) -> list[GoalProgress]:
-    today = date.today()
-    result: list[GoalProgress] = []
-    for goal in goals:
-        if goal.is_achieved:
-            continue
-        remaining_dates = (goal.target_date - today).days
+    return []
+
+
+def build_summary(
+    budget: BudgetRow,
+    allocations: list[AllocationRow],
+    current: list[TransactionRow],
+    previous: list[TransactionRow],
+    goals: list[GoalRow],
+    window_start: date,
+    window_end: date,
+) -> InsightSummary:
+    totals = calculate_totals(current)
+    change = compare_periods(current, previous)
+    breakdown = category_breakdown(current, allocations)
+    anomalies = detect_anomalies(current, previous, allocations)
+    patterns = detect_patterns(current, window_start, window_end)
+    goal_progress = compute_goal_progress(goals)
+
+    return InsightSummary(
+        budget_id=budget.id,
+        budget_name=budget.name,
+        period_label=_format_period_label(window_start, window_end),
+        total_income=totals.total_income,
+        total_expenses=totals.total_expenses,
+        net=totals.net,
+        savings_rate=totals.savings_rate,
+        income_change_pct=change["income_change_pct"],
+        expenses_change_pct=change["expenses_change_pct"],
+        category_breakdown=breakdown,
+        anomalies=anomalies,
+        patterns=patterns,
+        goals=goal_progress,
+        debt=None,
+        transaction_count=len(current),
+        recurring_count=sum(1 for t in current if t.is_recurring),
+    )
+
+
+def _format_period_label(start: date, end: date) -> str:
+    """Human-readable window label, e.g. 'Mar 15 – Apr 14, 2026'."""
+    if start.year == end.year:
+        return f"{start.strftime('%b %-d')} – {end.strftime('%b %-d, %Y')}"
+    return f"{start.strftime('%b %-d, %Y')} – {end.strftime('%b %-d, %Y')}"
