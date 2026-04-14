@@ -21,6 +21,7 @@ from app.models.schemas import (
     FinancialTotals,
     GoalRow,
     GoalProgress,
+    InsightSummary,
     InsightWindow,
     Pattern,
     TransactionRow,
@@ -480,9 +481,7 @@ def build_summary(
     goals: list[GoalRow],
     window_start: date,
     window_end: date,
-) -> "InsightSummary":
-    from app.models.schemas import InsightSummary
-
+) -> InsightSummary:
     totals = calculate_totals(current)
     change = compare_periods(current, previous)
     breakdown = category_breakdown(current, allocations)
