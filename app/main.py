@@ -1,7 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routes import ai as ai_routes
 from app.routes import insights as insights_routes
 
 app = FastAPI(title="finance-insights-engine")
@@ -14,4 +13,3 @@ app.add_middleware(
 )
 
 app.include_router(insights_routes.router)
-app.include_router(ai_routes.router)
