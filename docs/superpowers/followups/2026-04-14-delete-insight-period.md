@@ -1,3 +1,10 @@
+---
+status: open
+severity: minor
+resolved_date:
+resolved_by:
+---
+
 # Follow-up: Delete the unreferenced `InsightPeriod` model
 
 **Severity:** Minor — dead code.

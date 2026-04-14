@@ -20,18 +20,18 @@ so tests assert correct behavior, not legacy bugs.
 
 | # | Item | Fix |
 |---|---|---|
-| 1 | `detect_end_of_month_concentration` return `None` | returns `[]` |
+| 1 | `detect_end_of_period_concentration` return `None` | returns `[]` |
 | 2 | `detect_frequent_categories` return `None` | returns `[]` |
 | 3 | Mixed `date` / `pd.Timestamp` comparison | wrap `last_quarter` in `pd.Timestamp(...)` |
 | 4 | `category_removed` amount was `current_total` (≈0) | use `prev_total` |
 | 5 | Missing `$` on spike message `prev_total` | added |
-| 6 | `detect_end_of_month_concentration` pct format bug (`:.1f * 100`) | `(pct:.1f)` with `pct = ratio * 100` |
+| 6 | `detect_end_of_period_concentration` pct format bug (`:.1f * 100`) | `(pct:.1f)` with `pct = ratio * 100` |
 | 7 | `np.std(..., ddof=0)` underestimates for small n | `ddof=1` |
 | 8 | `"weekend_spender"` vs schema `"weekend_spend"` | canonical `"weekend_spend"` |
 | 9 | Import grouping (local before third-party) | stdlib → third-party → local |
 | 10 | `anomalies()` not verb+noun | renamed `detect_anomalies` |
 | 11 | `detect_category_totals` (doesn't detect) | renamed `sum_expenses_by_category` |
-| 12 | `detect_end_of_month_concentration` return type lied | `list[Pattern]` |
+| 12 | `detect_end_of_period_concentration` return type lied | `list[Pattern]` |
 | 13 | Lines > 88 chars | reformatted via ruff |
 | 14 | Trailing whitespace | stripped by ruff |
 | 15 | `TransactionRow.category_id: str` (required) contradicted `or "uncategorized"` fallback | made `Optional[str]` |
@@ -142,7 +142,7 @@ pattern, weekend ≤ 1.5× → no pattern, weekend < 10% of total → no pattern
 weekend_dates=0 → `[]`, weekday_dates=0 → `[]`, ratio formatting (`:.1f`),
 data fields populated, message contains weekend and weekday daily figures.
 
-**`TestDetectEndOfMonthConcentration` (7):** no budget dates → `[]`,
+**`TestDetectEndOfPeriodConcentration` (7):** no budget dates → `[]`,
 end_total / total > 0.40 → pattern, exactly 0.40 → no pattern (strict `>`),
 no spending → `[]`, pct format correct (regression for fix #6 — no
 `:.1f * 100` syntax error), `last_quarter` comparison works against

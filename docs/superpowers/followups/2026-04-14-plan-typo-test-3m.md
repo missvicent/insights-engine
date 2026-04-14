@@ -1,3 +1,10 @@
+---
+status: open
+severity: trivial
+resolved_date:
+resolved_by:
+---
+
 # Follow-up: Fix the off-by-one typo in the plan doc
 
 **Severity:** Trivial — documentation only, no code impact.

@@ -334,7 +334,7 @@ def detect_patterns(
 
     return [
         *detect_weekend_spend(df, total_expenses),
-        *detect_end_of_month_concentration(df, window_start, window_end),
+        *detect_end_of_period_concentration(df, window_start, window_end),
         *detect_frequent_categories(df),
     ]
 
@@ -374,7 +374,7 @@ def detect_weekend_spend(df: pd.DataFrame, total_expenses: float) -> list[Patter
     return []
 
 
-def detect_end_of_month_concentration(
+def detect_end_of_period_concentration(
     df: pd.DataFrame,
     window_start: date,
     window_end: date,
@@ -394,8 +394,8 @@ def detect_end_of_month_concentration(
         pct = (end_total / total) * 100
         return [
             Pattern(
-                type="end_of_month_concentration",
-                message=(f"{pct:.1f}% of spending in the last quarter of the month"),
+                type="end_of_period_concentration",
+                message=(f"{pct:.1f}% of spending in the last quarter of the window"),
                 data={},
             )
         ]

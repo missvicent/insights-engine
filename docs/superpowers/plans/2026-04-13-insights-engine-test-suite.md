@@ -184,7 +184,7 @@ from app.services.insights_engine import (
     detect_anomalies,
     detect_budget_overspending,
     detect_category_spikes,
-    detect_end_of_month_concentration,
+    detect_end_of_period_concentration,
     detect_frequent_categories,
     detect_large_single_transactions,
     detect_patterns,
@@ -879,7 +879,7 @@ Expected: 8 passed.
 
 ---
 
-## Task 13: TestDetectEndOfMonthConcentration (7 tests)
+## Task 13: TestDetectEndOfPeriodConcentration (7 tests)
 
 **Files:**
 - Modify: `tests/test_insights_engine.py` (append class)
@@ -887,11 +887,11 @@ Expected: 8 passed.
 - [ ] **Step 1: Append the class**
 
 ```python
-class TestDetectEndOfMonthConcentration:
+class TestDetectEndOfPeriodConcentration:
     # Reuses _expense_df from Task 12 (same module).
     # April 2026: 30-day budget, last quarter = Apr 23-30 (period_length//4 = 7)
 
-    def test_concentrated_end_of_month(self):
+    def test_concentrated_end_of_period(self):
         rows = [
             {"amount": 10.0, "date": date(2026, 4, 1)},
             {"amount": 10.0, "date": date(2026, 4, 5)},
@@ -899,15 +899,15 @@ class TestDetectEndOfMonthConcentration:
         ]
         df = _expense_df(rows)
         budget = make_budget()
-        result = detect_end_of_month_concentration(df, budget)
+        result = detect_end_of_period_concentration(df, budget)
         assert len(result) == 1
-        assert result[0].type == "end_of_month_concentration"
+        assert result[0].type == "end_of_period_concentration"
         assert "%" in result[0].message
 
     def test_even_distribution_no_pattern(self):
         rows = [{"amount": 10.0, "date": date(2026, 4, d)} for d in range(1, 29)]
         df = _expense_df(rows)
-        assert detect_end_of_month_concentration(df, make_budget()) == []
+        assert detect_end_of_period_concentration(df, make_budget()) == []
 
     def test_exactly_40pct_no_pattern(self):
         # total=100, end_total=40 → ratio == 0.40, strict > fails
@@ -916,7 +916,7 @@ class TestDetectEndOfMonthConcentration:
             {"amount": 40.0, "date": date(2026, 4, 25)},
         ]
         df = _expense_df(rows)
-        assert detect_end_of_month_concentration(df, make_budget()) == []
+        assert detect_end_of_period_concentration(df, make_budget()) == []
 
     def test_no_start_or_end_date_returns_empty(self):
         df = _expense_df([{"amount": 10.0, "date": date(2026, 4, 1)}])
@@ -926,7 +926,7 @@ class TestDetectEndOfMonthConcentration:
             start_date = None
             end_date = None
 
-        assert detect_end_of_month_concentration(df, _Budget()) == []
+        assert detect_end_of_period_concentration(df, _Budget()) == []
 
     def test_pct_formatting_no_syntax_error(self):
         # Regression: the old code had `:.1f * 100` which raised ValueError.
@@ -935,7 +935,7 @@ class TestDetectEndOfMonthConcentration:
             {"amount": 500.0, "date": date(2026, 4, 25)},
         ]
         df = _expense_df(rows)
-        result = detect_end_of_month_concentration(df, make_budget())
+        result = detect_end_of_period_concentration(df, make_budget())
         # Message includes a percent like "98.0%"
         assert result[0].message.endswith(
             "% of spending in the last quarter of the month"
@@ -946,7 +946,7 @@ class TestDetectEndOfMonthConcentration:
         # If it weren't, this would raise a TypeError.
         rows = [{"amount": 500.0, "date": date(2026, 4, 25)}]
         df = _expense_df(rows)
-        result = detect_end_of_month_concentration(df, make_budget())
+        result = detect_end_of_period_concentration(df, make_budget())
         assert len(result) == 1
 
     def test_short_budget_period(self):
@@ -959,14 +959,14 @@ class TestDetectEndOfMonthConcentration:
         budget = make_budget(
             start_date=date(2026, 4, 1), end_date=date(2026, 4, 3)
         )
-        result = detect_end_of_month_concentration(df, budget)
+        result = detect_end_of_period_concentration(df, budget)
         # Only the Apr 3 row is >= Apr 3, so it hits 98%.
         assert len(result) == 1
 ```
 
 - [ ] **Step 2: Run and verify all pass**
 
-Run: `venv/bin/python -m pytest tests/test_insights_engine.py::TestDetectEndOfMonthConcentration -v`
+Run: `venv/bin/python -m pytest tests/test_insights_engine.py::TestDetectEndOfPeriodConcentration -v`
 Expected: 7 passed.
 
 ---
@@ -1108,7 +1108,7 @@ class TestDetectPatterns:
             )
         result = detect_patterns(txs, make_budget())
         types = {p.type for p in result}
-        assert "end_of_month_concentration" in types
+        assert "end_of_period_concentration" in types
         assert "frequent_category" in types
 ```
 

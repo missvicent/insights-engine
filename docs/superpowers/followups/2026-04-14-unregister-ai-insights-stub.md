@@ -1,3 +1,10 @@
+---
+status: resolved
+severity: important
+resolved_date: 2026-04-14
+resolved_by: 5991750
+---
+
 # Follow-up: Stop running the pipeline in the `/ai-insights` stub
 
 **Severity:** Important — wasteful and a debugging footgun once live traffic hits the endpoint.

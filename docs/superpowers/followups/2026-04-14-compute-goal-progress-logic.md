@@ -1,3 +1,10 @@
+---
+status: open
+severity: minor
+resolved_date:
+resolved_by:
+---
+
 # Follow-up: Implement `compute_goal_progress` logic + tests
 
 **Severity:** Minor — the function currently returns `[]`; no caller asserts its content yet, so nothing is broken.

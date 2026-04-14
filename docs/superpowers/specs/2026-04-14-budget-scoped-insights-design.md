@@ -106,7 +106,7 @@ Rules (`current_end = today`, all ranges inclusive):
 
 ### 3.4 Engine changes (`app/services/insights_engine.py`)
 
-- `detect_patterns` signature changes from `(transactions, budget)` to `(transactions, window_start, window_end)`. `detect_end_of_month_concentration` receives the same two dates instead of a `BudgetRow` — the `relativedelta(days=period_length // 4)` math is unchanged, it just uses the window dates as the period.
+- `detect_patterns` signature changes from `(transactions, budget)` to `(transactions, window_start, window_end)`. `detect_end_of_period_concentration` receives the same two dates instead of a `BudgetRow` — the `relativedelta(days=period_length // 4)` math is unchanged, it just uses the window dates as the period.
 - `category_breakdown` and `detect_budget_overspending` are unchanged; they now receive a single budget's allocations, so the `alloc_map` collision is gone by construction.
 - New orchestrator:
 
