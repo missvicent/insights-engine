@@ -785,3 +785,71 @@ class TestLiteralTypeValidation:
             pct_of_total=100.0,
         )
         assert row.transaction_count == 3
+
+
+class TestResolveWindow:
+    def test_1m(self):
+        from app.services.insights_engine import resolve_window
+
+        today = date(2026, 4, 14)
+        cs, ce, ps, pe = resolve_window("1m", today)
+        assert ce == today
+        assert cs == date(2026, 3, 15)  # today - 30d
+        assert pe == date(2026, 3, 14)
+        assert ps == date(2026, 2, 12)
+
+    def test_3m(self):
+        from app.services.insights_engine import resolve_window
+
+        today = date(2026, 4, 14)
+        cs, ce, ps, pe = resolve_window("3m", today)
+        assert ce == today
+        assert cs == date(2026, 1, 14)  # today - 90d
+        assert pe == date(2026, 1, 13)
+        assert ps == date(2025, 10, 15)
+
+    def test_6m(self):
+        from app.services.insights_engine import resolve_window
+
+        today = date(2026, 4, 14)
+        cs, ce, ps, pe = resolve_window("6m", today)
+        assert (ce - cs).days == 180
+        assert (pe - ps).days == 180
+        assert pe == cs - pd.Timedelta(days=1).to_pytimedelta()
+
+    def test_1y(self):
+        from app.services.insights_engine import resolve_window
+
+        today = date(2026, 4, 14)
+        cs, ce, ps, pe = resolve_window("1y", today)
+        assert (ce - cs).days == 365
+        assert (pe - ps).days == 365
+
+    def test_current_year(self):
+        from app.services.insights_engine import resolve_window
+
+        today = date(2026, 4, 14)
+        cs, ce, ps, pe = resolve_window("current_year", today)
+        assert cs == date(2026, 1, 1)
+        assert ce == today
+        assert ps == date(2025, 1, 1)
+        assert pe == date(2025, 4, 14)
+
+    def test_current_year_leap_edge(self):
+        from app.services.insights_engine import resolve_window
+
+        today = date(2024, 2, 29)
+        _, _, ps, pe = resolve_window("current_year", today)
+        # Prior year has no Feb 29 → clamp to Feb 28
+        assert pe == date(2023, 2, 28)
+        assert ps == date(2023, 1, 1)
+
+    def test_last_year(self):
+        from app.services.insights_engine import resolve_window
+
+        today = date(2026, 4, 14)
+        cs, ce, ps, pe = resolve_window("last_year", today)
+        assert cs == date(2025, 1, 1)
+        assert ce == date(2025, 12, 31)
+        assert ps == date(2024, 1, 1)
+        assert pe == date(2024, 12, 31)

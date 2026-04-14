@@ -6,6 +6,8 @@ Input: raw DB rows
 Output: InsightSummary
 """
 
+from datetime import date, timedelta
+
 import numpy as np
 import pandas as pd
 from dateutil.relativedelta import relativedelta
@@ -18,12 +20,54 @@ from app.models.schemas import (
     FinancialTotals,
     GoalRow,
     GoalProgress,
+    InsightWindow,
     Pattern,
     TransactionRow,
 )
 
 SPIKE_THRESHOLD = 0.30
 HIGH_SEVERITY_THRESHOLD = 0.50
+
+
+def resolve_window(
+    window: InsightWindow,
+    today: date,
+) -> tuple[date, date, date, date]:
+    """Return (current_start, current_end, previous_start, previous_end)."""
+    if window in {"1m", "3m", "6m", "1y"}:
+        span_days = {"1m": 30, "3m": 90, "6m": 180, "1y": 365}[window]
+        current_end = today
+        current_start = today - timedelta(days=span_days)
+        previous_end = current_start - timedelta(days=1)
+        previous_start = previous_end - timedelta(days=span_days)
+        return current_start, current_end, previous_start, previous_end
+
+    if window == "current_year":
+        current_start = date(today.year, 1, 1)
+        current_end = today
+        previous_start = date(today.year - 1, 1, 1)
+        previous_end = _clamp_to_month_end(today.year - 1, today.month, today.day)
+        return current_start, current_end, previous_start, previous_end
+
+    if window == "last_year":
+        current_start = date(today.year - 1, 1, 1)
+        current_end = date(today.year - 1, 12, 31)
+        previous_start = date(today.year - 2, 1, 1)
+        previous_end = date(today.year - 2, 12, 31)
+        return current_start, current_end, previous_start, previous_end
+
+    raise ValueError(f"unknown window: {window}")
+
+
+def _clamp_to_month_end(year: int, month: int, day: int) -> date:
+    """Build a date, clamping day to the last valid day of that month.
+
+    Handles Feb 29 → Feb 28 when moving into a non-leap year.
+    """
+    import calendar
+
+    last_day = calendar.monthrange(year, month)[1]
+    return date(year, month, min(day, last_day))
 
 
 def calculate_totals(transactions: list[TransactionRow]) -> FinancialTotals:
