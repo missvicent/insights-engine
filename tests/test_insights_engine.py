@@ -845,3 +845,80 @@ class TestResolveWindow:
         assert ce == date(2025, 12, 31)
         assert ps == date(2024, 1, 1)
         assert pe == date(2024, 12, 31)
+
+
+class TestBuildSummary:
+    def test_stamps_budget_identity(self):
+        from app.services.insights_engine import build_summary
+        from tests.conftest import make_goal
+
+        budget = make_budget(id="budget-xyz")
+        budget_with_name = budget.model_copy(update={"name": "April 2026"})
+
+        summary = build_summary(
+            budget=budget_with_name,
+            allocations=[],
+            current=[make_income(1000.0), make_expense(200.0)],
+            previous=[make_income(800.0), make_expense(150.0)],
+            goals=[make_goal()],
+            window_start=date(2026, 4, 1),
+            window_end=date(2026, 4, 30),
+        )
+
+        assert summary.budget_id == "budget-xyz"
+        assert summary.budget_name == "April 2026"
+
+    def test_period_label_matches_window(self):
+        from app.services.insights_engine import build_summary
+
+        summary = build_summary(
+            budget=make_budget(),
+            allocations=[],
+            current=[],
+            previous=[],
+            goals=[],
+            window_start=date(2026, 3, 15),
+            window_end=date(2026, 4, 14),
+        )
+
+        assert summary.period_label == "Mar 15 – Apr 14, 2026"
+
+    def test_totals_and_change_pct(self):
+        from app.services.insights_engine import build_summary
+
+        summary = build_summary(
+            budget=make_budget(),
+            allocations=[],
+            current=[make_income(1000.0), make_expense(400.0)],
+            previous=[make_income(800.0), make_expense(200.0)],
+            goals=[],
+            window_start=date(2026, 4, 1),
+            window_end=date(2026, 4, 30),
+        )
+
+        assert summary.total_income == pytest.approx(1000.0)
+        assert summary.total_expenses == pytest.approx(400.0)
+        assert summary.net == pytest.approx(600.0)
+        assert summary.income_change_pct == pytest.approx(25.0)
+        assert summary.expenses_change_pct == pytest.approx(100.0)
+        assert summary.transaction_count == 2
+
+    def test_empty_inputs(self):
+        from app.services.insights_engine import build_summary
+
+        summary = build_summary(
+            budget=make_budget(),
+            allocations=[],
+            current=[],
+            previous=[],
+            goals=[],
+            window_start=date(2026, 4, 1),
+            window_end=date(2026, 4, 30),
+        )
+
+        assert summary.total_income == 0
+        assert summary.total_expenses == 0
+        assert summary.category_breakdown == []
+        assert summary.anomalies == []
+        assert summary.patterns == []
+        assert summary.transaction_count == 0

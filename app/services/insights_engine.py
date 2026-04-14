@@ -16,6 +16,7 @@ from dateutil.relativedelta import relativedelta
 from app.models.schemas import (
     AllocationRow,
     Anomaly,
+    BudgetRow,
     CategoryBreakdown,
     FinancialTotals,
     GoalRow,
@@ -442,4 +443,75 @@ def compute_goal_progress(goals: list[GoalRow]) -> list[GoalProgress]:
     for goal in goals:
         if goal.is_achieved:
             continue
-        remaining_dates = (goal.target_date - today).days
+
+        progress_pct = 0.0
+        if goal.target_amount > 0:
+            progress_pct = round(
+                (goal.current_amount / goal.target_amount) * 100, 2
+            )
+
+        days_remaining: int | None = None
+        on_track = True
+        if goal.target_date is not None:
+            days_remaining = (goal.target_date - today).days
+            # If the deadline has passed and goal isn't achieved, not on track.
+            if days_remaining < 0:
+                on_track = False
+
+        result.append(
+            GoalProgress(
+                goal_id=goal.id,
+                name=goal.name,
+                target_amount=goal.target_amount,
+                current_amount=goal.current_amount,
+                progress_pct=progress_pct,
+                days_remaining=days_remaining,
+                on_track=on_track,
+            )
+        )
+    return result
+
+
+def build_summary(
+    budget: BudgetRow,
+    allocations: list[AllocationRow],
+    current: list[TransactionRow],
+    previous: list[TransactionRow],
+    goals: list[GoalRow],
+    window_start: date,
+    window_end: date,
+) -> "InsightSummary":
+    from app.models.schemas import InsightSummary
+
+    totals = calculate_totals(current)
+    change = compare_periods(current, previous)
+    breakdown = category_breakdown(current, allocations)
+    anomalies = detect_anomalies(current, previous, allocations)
+    patterns = detect_patterns(current, window_start, window_end)
+    goal_progress = compute_goal_progress(goals)
+
+    return InsightSummary(
+        budget_id=budget.id,
+        budget_name=budget.name,
+        period_label=_format_period_label(window_start, window_end),
+        total_income=totals.total_income,
+        total_expenses=totals.total_expenses,
+        net=totals.net,
+        savings_rate=totals.savings_rate,
+        income_change_pct=change["income_change_pct"],
+        expenses_change_pct=change["expenses_change_pct"],
+        category_breakdown=breakdown,
+        anomalies=anomalies,
+        patterns=patterns,
+        goals=goal_progress,
+        debt=None,
+        transaction_count=len(current),
+        recurring_count=sum(1 for t in current if t.is_recurring),
+    )
+
+
+def _format_period_label(start: date, end: date) -> str:
+    """Human-readable window label, e.g. 'Mar 15 – Apr 14, 2026'."""
+    if start.year == end.year:
+        return f"{start.strftime('%b %-d')} – {end.strftime('%b %-d, %Y')}"
+    return f"{start.strftime('%b %-d, %Y')} – {end.strftime('%b %-d, %Y')}"
