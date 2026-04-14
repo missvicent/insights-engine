@@ -625,7 +625,48 @@ class TestBuildSummary:
 Run: `pytest tests/test_insights_engine.py::TestBuildSummary -v`
 Expected: all 4 tests fail with `ImportError` on `build_summary`.
 
-- [ ] **Step 4: Implement `build_summary` and `compute_goal_progress` helper wiring**
+- [ ] **Step 4a: Repair the broken `compute_goal_progress` function**
+
+The current `compute_goal_progress` in `app/services/insights_engine.py` (around line 393) was committed as a stub — it computes a local variable but returns `None`. Replace its body entirely so the function reads:
+
+```python
+def compute_goal_progress(goals: list[GoalRow]) -> list[GoalProgress]:
+    today = date.today()
+    result: list[GoalProgress] = []
+    for goal in goals:
+        if goal.is_achieved:
+            continue
+
+        progress_pct = 0.0
+        if goal.target_amount > 0:
+            progress_pct = round(
+                (goal.current_amount / goal.target_amount) * 100, 2
+            )
+
+        days_remaining: int | None = None
+        on_track = True
+        if goal.target_date is not None:
+            days_remaining = (goal.target_date - today).days
+            # On track iff (percent complete) >= (percent of time elapsed).
+            # If the deadline has passed and the goal isn't achieved, not on track.
+            if days_remaining < 0:
+                on_track = False
+
+        result.append(
+            GoalProgress(
+                goal_id=goal.id,
+                name=goal.name,
+                target_amount=goal.target_amount,
+                current_amount=goal.current_amount,
+                progress_pct=progress_pct,
+                days_remaining=days_remaining,
+                on_track=on_track,
+            )
+        )
+    return result
+```
+
+- [ ] **Step 4b: Implement `build_summary`**
 
 In `app/services/insights_engine.py`, at the bottom of the file (after `compute_goal_progress`), add:
 
