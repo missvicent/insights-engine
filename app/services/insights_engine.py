@@ -439,8 +439,33 @@ def detect_frequent_categories(df: pd.DataFrame) -> list[Pattern]:
 
 
 def compute_goal_progress(goals: list[GoalRow]) -> list[GoalProgress]:
-    return []
+    today = date.today()
+    result: list[GoalProgress] = []
+    for goal in goals:
+        if goal.is_achieved:
+            continue
+        progress_pct = 0.0
+        if goal.target_amount > 0:
+            progress_pct = round(
+                (goal.current_amount / goal.target_amount) * 100, 2
+            )
+        days_remaining: int | None = None
+        on_track = True
+        if goal.target_date is not None:
+            days_remaining = (goal.target_date - today).days
+            if days_remaining < 0:
+                on_track = False
 
+        result.append(GoalProgress(
+            goal_id=goal.id,
+            name=goal.name,
+            target_amount=goal.target_amount,
+            current_amount=goal.current_amount,
+            progress_pct=progress_pct,
+            days_remaining=days_remaining,
+            on_track=on_track,
+        ))
+    return result
 
 def build_summary(
     budget: BudgetRow,
