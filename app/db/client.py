@@ -40,19 +40,28 @@ def fetch_transactions(
     user_id: str,
     start: date,
     end: date,
+    budget_id: str | None = None,
     db: Client | None = None,
 ) -> list[TransactionRow]:
+    """Fetch transactions for `user_id` between `start` and `end` (inclusive).
+
+    When `budget_id` is provided, results are scoped to that budget.
+    When `budget_id` is None, all of the user's transactions in the window
+    are returned — retained for callers that don't yet operate per-budget.
+    """
     if db is None:
         db = get_supabase()
 
-    response = (
+    query = (
         db.table("transactions")
         .select("*, categories(name, icon, color)")
         .eq("user_id", user_id)
         .gte("transaction_date", start.isoformat())
         .lte("transaction_date", end.isoformat())
-        .execute()
     )
+    if budget_id is not None:
+        query = query.eq("budget_id", budget_id)
+    response = query.execute()
 
     rows = []
 

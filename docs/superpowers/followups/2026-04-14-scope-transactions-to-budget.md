@@ -1,8 +1,8 @@
 ---
-status: open
+status: resolved
 severity: important
-resolved_date:
-resolved_by:
+resolved_date: 2026-04-15
+resolved_by: nily
 ---
 
 # Follow-up: Scope transactions to the selected budget

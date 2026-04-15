@@ -247,7 +247,7 @@ class TestResolveWindow:
         assert ce == today
         assert cs == date(2026, 1, 14)  # today - 90d
         assert pe == date(2026, 1, 13)
-        assert ps == date(2025, 10, 16)
+        assert ps == date(2025, 10, 15)
 
     def test_6m(self):
         from app.services.insights_engine import resolve_window
