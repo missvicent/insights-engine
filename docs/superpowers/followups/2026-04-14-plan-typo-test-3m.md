@@ -1,8 +1,8 @@
 ---
-status: open
+status: resolved
 severity: trivial
-resolved_date:
-resolved_by:
+resolved_date: 2026-04-14
+resolved_by: nily
 ---
 
 # Follow-up: Fix the off-by-one typo in the plan doc

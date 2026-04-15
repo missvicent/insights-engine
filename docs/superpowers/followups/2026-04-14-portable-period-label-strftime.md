@@ -1,8 +1,8 @@
 ---
-status: open
+status: resolved
 severity: minor
-resolved_date:
-resolved_by:
+resolved_date: 2026-04-14
+resolved_by: nily
 ---
 
 # Follow-up: Make `_format_period_label` Windows-portable

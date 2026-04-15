@@ -883,6 +883,21 @@ class TestBuildSummary:
 
         assert summary.period_label == "Mar 15 – Apr 14, 2026"
 
+    def test_period_label_crosses_year(self):
+        from app.services.insights_engine import build_summary
+
+        summary = build_summary(
+            budget=make_budget(),
+            allocations=[],
+            current=[],
+            previous=[],
+            goals=[],
+            window_start=date(2025, 12, 15),
+            window_end=date(2026, 1, 14),
+        )
+
+        assert summary.period_label == "Dec 15, 2025 – Jan 14, 2026"
+
     def test_totals_and_change_pct(self):
         from app.services.insights_engine import build_summary
 

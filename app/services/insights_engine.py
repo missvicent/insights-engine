@@ -481,5 +481,11 @@ def build_summary(
 def _format_period_label(start: date, end: date) -> str:
     """Human-readable window label, e.g. 'Mar 15 – Apr 14, 2026'."""
     if start.year == end.year:
-        return f"{start.strftime('%b %-d')} – {end.strftime('%b %-d, %Y')}"
-    return f"{start.strftime('%b %-d, %Y')} – {end.strftime('%b %-d, %Y')}"
+        return (
+            f"{start.strftime('%b')} {start.day} – "
+            f"{end.strftime('%b')} {end.day}, {end.year}"
+        )
+    return (
+        f"{start.strftime('%b')} {start.day}, {start.year} – "
+        f"{end.strftime('%b')} {end.day}, {end.year}"
+    )

@@ -6,9 +6,10 @@ so swapping in a real auth implementation is a one-file change.
 """
 
 from fastapi import Header, HTTPException
+from typing import Annotated
 
 
-def get_current_user(x_user_id: str | None = Header(default=None)) -> str:
+def get_current_user(x_user_id: Annotated[str, Header()] | None = Header(default=None)) -> str:
     if not x_user_id:
         raise HTTPException(status_code=401, detail="missing x-user-id header")
     return x_user_id
