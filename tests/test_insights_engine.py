@@ -6,7 +6,7 @@ tests/conftest.py.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 import pytest
@@ -22,6 +22,7 @@ from app.services.insights_engine import (
     calculate_totals,
     category_breakdown,
     compare_periods,
+    compute_goal_progress,
     detect_anomalies,
     detect_budget_overspending,
     detect_category_spikes,
@@ -845,6 +846,71 @@ class TestResolveWindow:
         assert ce == date(2025, 12, 31)
         assert ps == date(2024, 1, 1)
         assert pe == date(2024, 12, 31)
+
+
+class TestComputeGoalProgress:
+    def test_excludes_achieved_goals(self):
+        from tests.conftest import make_goal
+
+        goals = [
+            make_goal(name="Done", is_achieved=True),
+            make_goal(name="Active", is_achieved=False),
+        ]
+        result = compute_goal_progress(goals)
+
+        assert [g.name for g in result] == ["Active"]
+
+    def test_target_date_none_sets_days_remaining_none_and_on_track(self):
+        from tests.conftest import make_goal
+
+        result = compute_goal_progress([make_goal(target_date=None)])
+
+        assert len(result) == 1
+        assert result[0].days_remaining is None
+        assert result[0].on_track is True
+
+    def test_past_target_date_marks_off_track(self):
+        from tests.conftest import make_goal
+
+        past = date.today() - timedelta(days=10)
+        result = compute_goal_progress(
+            [make_goal(target_date=past, is_achieved=False)]
+        )
+
+        assert len(result) == 1
+        assert result[0].on_track is False
+        assert result[0].days_remaining is not None
+        assert result[0].days_remaining < 0
+
+    def test_zero_target_amount_yields_zero_pct_no_divzero(self):
+        from tests.conftest import make_goal
+
+        result = compute_goal_progress(
+            [make_goal(target_amount=0.0, current_amount=50.0)]
+        )
+
+        assert len(result) == 1
+        assert result[0].progress_pct == 0.0
+
+    def test_halfway_to_target_with_future_deadline(self):
+        from tests.conftest import make_goal
+
+        future = date.today() + timedelta(days=30)
+        result = compute_goal_progress(
+            [
+                make_goal(
+                    target_amount=1000.0,
+                    current_amount=500.0,
+                    target_date=future,
+                )
+            ]
+        )
+
+        assert len(result) == 1
+        assert result[0].progress_pct == pytest.approx(50.0)
+        assert result[0].on_track is True
+        assert result[0].days_remaining is not None
+        assert result[0].days_remaining >= 0
 
 
 class TestBuildSummary:

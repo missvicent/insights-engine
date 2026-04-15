@@ -1,8 +1,8 @@
 ---
-status: open
+status: resolved
 severity: minor
-resolved_date:
-resolved_by:
+resolved_date: 2026-04-15
+resolved_by: nily
 ---
 
 # Follow-up: Implement `compute_goal_progress` logic + tests
