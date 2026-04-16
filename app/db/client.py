@@ -16,7 +16,9 @@ from app.models.schemas import (
 
 class Settings(BaseSettings):
     supabase_url: str
-    supabase_service_key: str
+    supabase_service_key: str  # still used by get_supabase(); removed in Task 8
+    supabase_anon_key: str
+    supabase_jwt_secret: str
 
     class Config:
         env_file = ".env"
