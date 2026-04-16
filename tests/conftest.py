@@ -6,9 +6,13 @@ override only the fields they care about.
 
 from __future__ import annotations
 
+import time
 import uuid
 from datetime import date
-from typing import Optional
+from typing import Any, Optional
+
+import jwt as pyjwt
+import pytest
 
 from app.models.schemas import (
     AllocationRow,
@@ -123,3 +127,37 @@ def make_goal(
         target_date=target_date,
         is_achieved=is_achieved,
     )
+
+
+@pytest.fixture
+def jwt_secret() -> str:
+    return "test-secret-do-not-use-in-prod"
+
+
+@pytest.fixture
+def make_token(jwt_secret: str):
+    """Build a signed JWT with sensible defaults, overrideable per-test."""
+
+    def _make(
+        claims: dict[str, Any] | None = None,
+        secret: str | None = None,
+        algorithm: str = "HS256",
+        exp_delta: int = 3600,
+        audience: str | None = "authenticated",
+        sub: str | None = "test-user",
+        omit: tuple[str, ...] = (),
+    ) -> str:
+        now = int(time.time())
+        payload: dict[str, Any] = {
+            "iat": now,
+            "exp": now + exp_delta,
+            "sub": sub,
+            "aud": audience,
+        }
+        if claims:
+            payload.update(claims)
+        for key in omit:
+            payload.pop(key, None)
+        return pyjwt.encode(payload, secret or jwt_secret, algorithm=algorithm)
+
+    return _make
