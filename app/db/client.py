@@ -38,6 +38,19 @@ def get_supabase() -> Client:
     return create_client(s.supabase_url, s.supabase_service_key)
 
 
+def build_user_client(access_token: str) -> Client:
+    """Build a per-request Supabase client authenticated as the end user.
+
+    The anon key is the client's baseline (public, no RLS grants), and the
+    user's JWT is attached via postgrest.auth so every query runs under
+    auth.uid() and RLS enforces row-level access.
+    """
+    s = get_settings()
+    client = create_client(s.supabase_url, s.supabase_anon_key)
+    client.postgrest.auth(access_token)
+    return client
+
+
 def fetch_transactions(
     user_id: str,
     start: date,
