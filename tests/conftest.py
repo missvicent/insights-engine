@@ -15,6 +15,7 @@ from typing import Any, Optional
 import jwt as pyjwt
 import pytest
 
+from app.context import UserContext
 from app.models.schemas import (
     AllocationRow,
     BudgetRow,
@@ -162,3 +163,41 @@ def make_token(jwt_secret: str) -> Callable[..., str]:
         return pyjwt.encode(payload, secret or jwt_secret, algorithm=algorithm)
 
     return _make
+
+
+class FakeQuery:
+    """Chainable no-op query; returns an object with `.data` when executed.
+
+    Mirrors the subset of the supabase-py builder that db/client.py uses:
+    select, eq, gte, lte, limit, execute. Filters are recorded but ignored;
+    the caller seeds rows per (schema, table).
+    """
+
+    def __init__(self, rows: list[dict]):
+        self._rows = rows
+
+    def select(self, *_a, **_kw): return self
+    def eq(self, *_a, **_kw): return self
+    def gte(self, *_a, **_kw): return self
+    def lte(self, *_a, **_kw): return self
+    def limit(self, *_a, **_kw): return self
+
+    def execute(self):
+        class _Resp:
+            data = self._rows
+        return _Resp()
+
+
+class FakeDB:
+    """Minimal stand-in for a Supabase client. `table(name)` returns a
+    FakeQuery over whatever rows the test seeded for that table."""
+
+    def __init__(self, tables: dict[str, list[dict]] | None = None):
+        self._tables = tables or {}
+
+    def table(self, name: str) -> FakeQuery:
+        return FakeQuery(self._tables.get(name, []))
+
+
+def make_user_ctx(user_id: str = "user-1", tables: dict | None = None) -> UserContext:
+    return UserContext(user_id=user_id, db=FakeDB(tables))
