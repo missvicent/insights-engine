@@ -17,7 +17,6 @@ from app.models.schemas import (
 
 class Settings(BaseSettings):
     supabase_url: str
-    supabase_service_key: str  # still used by get_supabase(); removed in Task 8
     supabase_anon_key: str
     supabase_jwt_secret: str
 
@@ -29,14 +28,6 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-
-
-# service key bypasses RLS — safe for backend only, never expose to frontend
-@lru_cache
-def get_supabase() -> Client:
-    s = get_settings()
-
-    return create_client(s.supabase_url, s.supabase_service_key)
 
 
 def build_user_client(access_token: str) -> Client:
