@@ -36,6 +36,7 @@ def client() -> TestClient:
 
 @pytest.fixture(autouse=True)
 def _clear_overrides():
+    app.dependency_overrides.clear()
     yield
     app.dependency_overrides.clear()
 

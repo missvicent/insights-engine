@@ -173,18 +173,28 @@ class FakeQuery:
     the caller seeds rows per (schema, table).
     """
 
-    def __init__(self, rows: list[dict]):
+    def __init__(self, rows: list[dict]) -> None:
         self._rows = rows
 
-    def select(self, *_a, **_kw): return self
-    def eq(self, *_a, **_kw): return self
-    def gte(self, *_a, **_kw): return self
-    def lte(self, *_a, **_kw): return self
-    def limit(self, *_a, **_kw): return self
+    def select(self, *_a: object, **_kw: object) -> "FakeQuery":
+        return self
 
-    def execute(self):
+    def eq(self, *_a: object, **_kw: object) -> "FakeQuery":
+        return self
+
+    def gte(self, *_a: object, **_kw: object) -> "FakeQuery":
+        return self
+
+    def lte(self, *_a: object, **_kw: object) -> "FakeQuery":
+        return self
+
+    def limit(self, *_a: object, **_kw: object) -> "FakeQuery":
+        return self
+
+    def execute(self) -> object:
         class _Resp:
             data = self._rows
+
         return _Resp()
 
 
@@ -192,7 +202,7 @@ class FakeDB:
     """Minimal stand-in for a Supabase client. `table(name)` returns a
     FakeQuery over whatever rows the test seeded for that table."""
 
-    def __init__(self, tables: dict[str, list[dict]] | None = None):
+    def __init__(self, tables: dict[str, list[dict]] | None = None) -> None:
         self._tables = tables or {}
 
     def table(self, name: str) -> FakeQuery:
