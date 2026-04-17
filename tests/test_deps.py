@@ -92,3 +92,10 @@ class TestGetUserCtx:
             _call(f"Bearer {token}")
         assert exc.value.status_code == 401
         assert exc.value.detail == "invalid token"
+
+    def test_empty_sub_is_401(self, make_token):
+        token = make_token(sub="")
+        with pytest.raises(HTTPException) as exc:
+            _call(f"Bearer {token}")
+        assert exc.value.status_code == 401
+        assert exc.value.detail == "invalid token"

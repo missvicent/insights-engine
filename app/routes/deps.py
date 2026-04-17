@@ -40,4 +40,7 @@ def get_user_ctx(
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="invalid token") from None
 
-    return UserContext(user_id=payload["sub"], db=build_user_client(token))
+    user_id = payload["sub"]
+    if not user_id:
+        raise HTTPException(status_code=401, detail="invalid token")
+    return UserContext(user_id=user_id, db=build_user_client(token))
