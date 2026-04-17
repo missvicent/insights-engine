@@ -12,6 +12,7 @@ from unittest.mock import patch
 import pytest
 from fastapi import HTTPException
 
+from app.context import UserContext
 from app.routes.deps import get_user_ctx
 
 
@@ -20,7 +21,7 @@ class _FakeDB:
 
 
 @pytest.fixture(autouse=True)
-def _patch_build_user_client(jwt_secret):
+def _patch_build_user_client():
     """Stop get_user_ctx from building a real Supabase client in tests."""
     with patch("app.routes.deps.build_user_client", return_value=_FakeDB()):
         yield
@@ -34,7 +35,7 @@ def _patch_settings(jwt_secret):
         yield
 
 
-def _call(header_value: str | None):
+def _call(header_value: str | None) -> UserContext:
     return get_user_ctx(authorization=header_value)
 
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import Callable
 from datetime import date
 from typing import Any, Optional
 
@@ -135,7 +136,7 @@ def jwt_secret() -> str:
 
 
 @pytest.fixture
-def make_token(jwt_secret: str):
+def make_token(jwt_secret: str) -> Callable[..., str]:
     """Build a signed JWT with sensible defaults, overrideable per-test."""
 
     def _make(
