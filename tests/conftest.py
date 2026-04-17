@@ -6,10 +6,16 @@ override only the fields they care about.
 
 from __future__ import annotations
 
+import time
 import uuid
+from collections.abc import Callable
 from datetime import date
-from typing import Optional
+from typing import Any, Optional
 
+import jwt as pyjwt
+import pytest
+
+from app.context import UserContext
 from app.models.schemas import (
     AllocationRow,
     BudgetRow,
@@ -123,3 +129,85 @@ def make_goal(
         target_date=target_date,
         is_achieved=is_achieved,
     )
+
+
+@pytest.fixture
+def jwt_secret() -> str:
+    return "test-secret-do-not-use-in-prod"
+
+
+@pytest.fixture
+def make_token(jwt_secret: str) -> Callable[..., str]:
+    """Build a signed JWT with sensible defaults, overrideable per-test."""
+
+    def _make(
+        claims: dict[str, Any] | None = None,
+        secret: str | None = None,
+        algorithm: str = "HS256",
+        exp_delta: int = 3600,
+        audience: str | None = "authenticated",
+        sub: str | None = "test-user",
+        omit: tuple[str, ...] = (),
+    ) -> str:
+        now = int(time.time())
+        payload: dict[str, Any] = {
+            "iat": now,
+            "exp": now + exp_delta,
+            "sub": sub,
+            "aud": audience,
+        }
+        if claims:
+            payload.update(claims)
+        for key in omit:
+            payload.pop(key, None)
+        return pyjwt.encode(payload, secret or jwt_secret, algorithm=algorithm)
+
+    return _make
+
+
+class FakeQuery:
+    """Chainable no-op query; returns an object with `.data` when executed.
+
+    Mirrors the subset of the supabase-py builder that db/client.py uses:
+    select, eq, gte, lte, limit, execute. Filters are recorded but ignored;
+    the caller seeds rows per (schema, table).
+    """
+
+    def __init__(self, rows: list[dict]) -> None:
+        self._rows = rows
+
+    def select(self, *_a: object, **_kw: object) -> "FakeQuery":
+        return self
+
+    def eq(self, *_a: object, **_kw: object) -> "FakeQuery":
+        return self
+
+    def gte(self, *_a: object, **_kw: object) -> "FakeQuery":
+        return self
+
+    def lte(self, *_a: object, **_kw: object) -> "FakeQuery":
+        return self
+
+    def limit(self, *_a: object, **_kw: object) -> "FakeQuery":
+        return self
+
+    def execute(self) -> object:
+        class _Resp:
+            data = self._rows
+
+        return _Resp()
+
+
+class FakeDB:
+    """Minimal stand-in for a Supabase client. `table(name)` returns a
+    FakeQuery over whatever rows the test seeded for that table."""
+
+    def __init__(self, tables: dict[str, list[dict]] | None = None) -> None:
+        self._tables = tables or {}
+
+    def table(self, name: str) -> FakeQuery:
+        return FakeQuery(self._tables.get(name, []))
+
+
+def make_user_ctx(user_id: str = "user-1", tables: dict | None = None) -> UserContext:
+    return UserContext(user_id=user_id, db=FakeDB(tables))
