@@ -963,6 +963,7 @@ class TestBuildSummary:
             current=[make_income(1000.0), make_expense(200.0)],
             previous=[make_income(800.0), make_expense(150.0)],
             goals=[make_goal()],
+            window="30d",
             window_start=date(2026, 4, 1),
             window_end=date(2026, 4, 30),
         )
@@ -979,6 +980,7 @@ class TestBuildSummary:
             current=[],
             previous=[],
             goals=[],
+            window="30d",
             window_start=date(2026, 3, 15),
             window_end=date(2026, 4, 14),
         )
@@ -994,6 +996,7 @@ class TestBuildSummary:
             current=[],
             previous=[],
             goals=[],
+            window="30d",
             window_start=date(2025, 12, 15),
             window_end=date(2026, 1, 14),
         )
@@ -1009,6 +1012,7 @@ class TestBuildSummary:
             current=[make_income(1000.0), make_expense(400.0)],
             previous=[make_income(800.0), make_expense(200.0)],
             goals=[],
+            window="30d",
             window_start=date(2026, 4, 1),
             window_end=date(2026, 4, 30),
         )
@@ -1029,6 +1033,7 @@ class TestBuildSummary:
             current=[],
             previous=[],
             goals=[],
+            window="30d",
             window_start=date(2026, 4, 1),
             window_end=date(2026, 4, 30),
         )
@@ -1039,3 +1044,35 @@ class TestBuildSummary:
         assert summary.anomalies == []
         assert summary.patterns == []
         assert summary.transaction_count == 0
+
+    def test_monthly_window_sets_horizon(self):
+        from app.services.insights_engine import build_summary
+
+        summary = build_summary(
+            budget=make_budget(),
+            allocations=[],
+            current=[],
+            previous=[],
+            goals=[],
+            window="30d",
+            window_start=date(2026, 3, 15),
+            window_end=date(2026, 4, 14),
+        )
+
+        assert summary.next_action_horizon_days == 7
+
+    def test_yearly_window_sets_horizon(self):
+        from app.services.insights_engine import build_summary
+
+        summary = build_summary(
+            budget=make_budget(),
+            allocations=[],
+            current=[],
+            previous=[],
+            goals=[],
+            window="6m",
+            window_start=date(2025, 10, 17),
+            window_end=date(2026, 4, 14),
+        )
+
+        assert summary.next_action_horizon_days == 30

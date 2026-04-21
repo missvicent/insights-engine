@@ -187,6 +187,8 @@ class InsightSummary(BaseModel):
     transaction_count: int
     recurring_count: int
 
+    next_action_horizon_days: int
+
     # ── API response shapes ───────────────────────────────────────────────────────
 
 

@@ -488,6 +488,7 @@ def build_summary(
     current: list[TransactionRow],
     previous: list[TransactionRow],
     goals: list[GoalRow],
+    window: InsightWindow,
     window_start: date,
     window_end: date,
 ) -> InsightSummary:
@@ -515,6 +516,7 @@ def build_summary(
         debt=None,
         transaction_count=len(current),
         recurring_count=sum(1 for t in current if t.is_recurring),
+        next_action_horizon_days=_horizon_for_window(window),
     )
 
 

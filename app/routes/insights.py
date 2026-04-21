@@ -42,6 +42,7 @@ def get_insights(
         current=current,
         previous=previous,
         goals=goals,
+        window=q.window,
         window_start=current_start,
         window_end=current_end,
     )
