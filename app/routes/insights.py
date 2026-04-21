@@ -12,7 +12,11 @@ from app.db.client import (
 )
 from app.models.schemas import InsightsQuery, InsightsResponse
 from app.routes.deps import get_user_ctx
-from app.services.insights_engine import build_summary, resolve_window
+from app.services.insights_engine import (
+    allowed_windows_for_period,
+    build_summary,
+    resolve_window,
+)
 
 
 router = APIRouter()
@@ -27,6 +31,12 @@ def get_insights(
         budget, allocations = fetch_budget(ctx, q.budget_id)
     except BudgetNotFound:
         raise HTTPException(status_code=404, detail="budget not found") from None
+
+    if q.window not in allowed_windows_for_period(budget.period):
+        raise HTTPException(
+            status_code=422,
+            detail=f"window {q.window!r} not allowed for {budget.period!r} budget",
+        )
 
     current_start, current_end, prev_start, prev_end = resolve_window(
         q.window, date.today()
