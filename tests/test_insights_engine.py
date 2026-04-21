@@ -866,6 +866,24 @@ class TestHorizonForWindow:
         assert _horizon_for_window(window) == expected_horizon
 
 
+class TestAllowedWindowsForPeriod:
+    def test_monthly_returns_day_windows(self):
+        from app.services.insights_engine import allowed_windows_for_period
+
+        assert allowed_windows_for_period("monthly") == {"7d", "15d", "30d"}
+
+    def test_yearly_returns_month_windows(self):
+        from app.services.insights_engine import allowed_windows_for_period
+
+        assert allowed_windows_for_period("yearly") == {"3m", "6m", "12m"}
+
+    def test_unknown_period_raises(self):
+        from app.services.insights_engine import allowed_windows_for_period
+
+        with pytest.raises(ValueError, match="unknown budget period"):
+            allowed_windows_for_period("weekly")
+
+
 class TestComputeGoalProgress:
     def test_excludes_achieved_goals(self):
         from tests.conftest import make_goal

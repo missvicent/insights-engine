@@ -68,6 +68,23 @@ def _horizon_for_window(window: InsightWindow) -> int:
     return _HORIZON_DAYS[window]
 
 
+_ALLOWED_WINDOWS: dict[str, set[InsightWindow]] = {
+    "monthly": {"7d", "15d", "30d"},
+    "yearly": {"3m", "6m", "12m"},
+}
+
+
+def allowed_windows_for_period(period: str) -> set[InsightWindow]:
+    """Which InsightWindow values are valid for a budget with this period.
+
+    Raises ValueError for unknown periods.
+    """
+    try:
+        return _ALLOWED_WINDOWS[period]
+    except KeyError as e:
+        raise ValueError(f"unknown budget period: {period!r}") from e
+
+
 def calculate_totals(transactions: list[TransactionRow]) -> FinancialTotals:
     income = sum(t.amount for t in transactions if t.type == "income")
     expenses = sum(t.amount for t in transactions if t.type == "expense")
