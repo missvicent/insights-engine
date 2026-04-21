@@ -58,7 +58,7 @@ class BudgetRow(BaseModel):
     id: str
     user_id: str
     name: str
-    period: str  # 'monthly'| 'daily'
+    period: str  # 'monthly' | 'yearly'
     amount: float
     start_date: date
     end_date: date
