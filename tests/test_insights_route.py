@@ -51,19 +51,19 @@ class TestGetInsights:
                 "goals": [],
             }
         )
-        resp = client.get("/insights?budget_id=budget-1&window=1m")
+        resp = client.get("/insights?budget_id=budget-1&window=30d")
         assert resp.status_code == 200
         body = resp.json()
         assert body["summary"]["budget_id"] == "budget-1"
 
     def test_missing_authorization_is_401(self, client):
-        resp = client.get("/insights?budget_id=budget-1&window=1m")
+        resp = client.get("/insights?budget_id=budget-1&window=30d")
         assert resp.status_code == 401
 
     def test_budget_not_found_is_404(self, client):
         app.dependency_overrides[get_user_ctx] = lambda: make_user_ctx(
             tables={"budgets": []}
         )
-        resp = client.get("/insights?budget_id=missing&window=1m")
+        resp = client.get("/insights?budget_id=missing&window=30d")
         assert resp.status_code == 404
         assert resp.json()["detail"] == "budget not found"

@@ -781,11 +781,31 @@ class TestLiteralTypeValidation:
 
 
 class TestResolveWindow:
-    def test_1m(self):
+    def test_7d(self):
         from app.services.insights_engine import resolve_window
 
         today = date(2026, 4, 14)
-        cs, ce, ps, pe = resolve_window("1m", today)
+        cs, ce, ps, pe = resolve_window("7d", today)
+        assert ce == today
+        assert cs == date(2026, 4, 7)  # today - 7d
+        assert pe == date(2026, 4, 6)
+        assert ps == date(2026, 3, 30)
+
+    def test_15d(self):
+        from app.services.insights_engine import resolve_window
+
+        today = date(2026, 4, 14)
+        cs, ce, ps, pe = resolve_window("15d", today)
+        assert ce == today
+        assert cs == date(2026, 3, 30)  # today - 15d
+        assert pe == date(2026, 3, 29)
+        assert ps == date(2026, 3, 14)
+
+    def test_30d(self):
+        from app.services.insights_engine import resolve_window
+
+        today = date(2026, 4, 14)
+        cs, ce, ps, pe = resolve_window("30d", today)
         assert ce == today
         assert cs == date(2026, 3, 15)  # today - 30d
         assert pe == date(2026, 3, 14)
@@ -806,46 +826,26 @@ class TestResolveWindow:
 
         today = date(2026, 4, 14)
         cs, ce, ps, pe = resolve_window("6m", today)
+        assert ce == today
         assert (ce - cs).days == 180
         assert (pe - ps).days == 180
-        assert pe == cs - pd.Timedelta(days=1).to_pytimedelta()
+        assert pe == cs - timedelta(days=1)
 
-    def test_1y(self):
+    def test_12m(self):
         from app.services.insights_engine import resolve_window
 
         today = date(2026, 4, 14)
-        cs, ce, ps, pe = resolve_window("1y", today)
+        cs, ce, ps, pe = resolve_window("12m", today)
+        assert ce == today
         assert (ce - cs).days == 365
         assert (pe - ps).days == 365
+        assert pe == cs - timedelta(days=1)
 
-    def test_current_year(self):
+    def test_unknown_window_raises(self):
         from app.services.insights_engine import resolve_window
 
-        today = date(2026, 4, 14)
-        cs, ce, ps, pe = resolve_window("current_year", today)
-        assert cs == date(2026, 1, 1)
-        assert ce == today
-        assert ps == date(2025, 1, 1)
-        assert pe == date(2025, 4, 14)
-
-    def test_current_year_leap_edge(self):
-        from app.services.insights_engine import resolve_window
-
-        today = date(2024, 2, 29)
-        _, _, ps, pe = resolve_window("current_year", today)
-        # Prior year has no Feb 29 → clamp to Feb 28
-        assert pe == date(2023, 2, 28)
-        assert ps == date(2023, 1, 1)
-
-    def test_last_year(self):
-        from app.services.insights_engine import resolve_window
-
-        today = date(2026, 4, 14)
-        cs, ce, ps, pe = resolve_window("last_year", today)
-        assert cs == date(2025, 1, 1)
-        assert ce == date(2025, 12, 31)
-        assert ps == date(2024, 1, 1)
-        assert pe == date(2024, 12, 31)
+        with pytest.raises(ValueError, match="unknown window"):
+            resolve_window("nope", date(2026, 4, 14))  # type: ignore[arg-type]
 
 
 class TestComputeGoalProgress:

@@ -21,14 +21,7 @@ PatternType = Literal[
     "recurring_growth",
 ]
 
-InsightWindow = Literal[
-    "1m",
-    "3m",
-    "6m",
-    "1y",
-    "current_year",
-    "last_year",
-]
+InsightWindow = Literal["7d", "15d", "30d", "3m", "6m", "12m"]
 
 
 class TransactionRow(BaseModel):
