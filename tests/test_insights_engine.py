@@ -848,6 +848,24 @@ class TestResolveWindow:
             resolve_window("nope", date(2026, 4, 14))  # type: ignore[arg-type]
 
 
+class TestHorizonForWindow:
+    @pytest.mark.parametrize(
+        "window,expected_horizon",
+        [
+            ("7d", 3),
+            ("15d", 7),
+            ("30d", 7),
+            ("3m", 14),
+            ("6m", 30),
+            ("12m", 30),
+        ],
+    )
+    def test_mapping(self, window, expected_horizon):
+        from app.services.insights_engine import _horizon_for_window
+
+        assert _horizon_for_window(window) == expected_horizon
+
+
 class TestComputeGoalProgress:
     def test_excludes_achieved_goals(self):
         from tests.conftest import make_goal

@@ -53,6 +53,21 @@ def resolve_window(
     return current_start, current_end, previous_start, previous_end
 
 
+_HORIZON_DAYS: dict[InsightWindow, int] = {
+    "7d": 3,
+    "15d": 7,
+    "30d": 7,
+    "3m": 14,
+    "6m": 30,
+    "12m": 30,
+}
+
+
+def _horizon_for_window(window: InsightWindow) -> int:
+    """Days of forward-looking action the deterministic signal supports."""
+    return _HORIZON_DAYS[window]
+
+
 def calculate_totals(transactions: list[TransactionRow]) -> FinancialTotals:
     income = sum(t.amount for t in transactions if t.type == "income")
     expenses = sum(t.amount for t in transactions if t.type == "expense")
