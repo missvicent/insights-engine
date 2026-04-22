@@ -228,6 +228,7 @@ def detect_category_spikes(
         if prev_total < 0.01:
             result.append(
                 Anomaly(
+                    id=f"new_category:{cat}",
                     type="new_category",
                     category_name=display_name,
                     icon=icon,
@@ -243,6 +244,7 @@ def detect_category_spikes(
         elif prev_total > 0 and current_total < 0.01:
             result.append(
                 Anomaly(
+                    id=f"category_removed:{cat}",
                     type="category_removed",
                     category_name=display_name,
                     icon=icon,
@@ -261,6 +263,7 @@ def detect_category_spikes(
                 severity = "high" if change > HIGH_SEVERITY_THRESHOLD else "medium"
                 result.append(
                     Anomaly(
+                        id=f"spike:{cat}",
                         type="spike",
                         category_name=display_name,
                         icon=icon,
@@ -294,6 +297,7 @@ def detect_budget_overspending(
             pct = total / limit * 100
             result.append(
                 Anomaly(
+                    id=f"budget_exceeded:{cat}",
                     type="budget_exceeded",
                     category_name=display_name,
                     icon=icon,
@@ -326,6 +330,7 @@ def detect_large_single_transactions(
         label = t.merchant or t.description or t.category_name or "uncategorized"
         result.append(
             Anomaly(
+                id=f"large_single:{t.id}",
                 type="large_single",
                 category_name=t.category_name,
                 icon=t.category_icon,
@@ -390,6 +395,7 @@ def detect_weekend_spend(df: pd.DataFrame, total_expenses: float) -> list[Patter
         ratio = weekend_daily / weekday_daily
         return [
             Pattern(
+                id="weekend_spend",
                 type="weekend_spend",
                 message=(
                     f"You spend {ratio:.1f}× more per day on weekends "
@@ -425,6 +431,7 @@ def detect_end_of_period_concentration(
         pct = (end_total / total) * 100
         return [
             Pattern(
+                id="end_of_period_concentration",
                 type="end_of_period_concentration",
                 message=(f"{pct:.1f}% of spending in the last quarter of the window"),
                 data={},
@@ -453,6 +460,7 @@ def detect_frequent_categories(df: pd.DataFrame) -> list[Pattern]:
         if total > 0:
             patterns.append(
                 Pattern(
+                    id=f"frequent_category:{category}",
                     category_name=category,
                     type="frequent_category",
                     message=(

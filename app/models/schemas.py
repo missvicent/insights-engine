@@ -127,6 +127,7 @@ class CategoryBreakdown(BaseModel):
 
 
 class Anomaly(BaseModel):
+    id: str
     type: AnomalyType
     category_name: Optional[str] = None
     icon: Optional[str] = None
@@ -137,6 +138,7 @@ class Anomaly(BaseModel):
 
 
 class Pattern(BaseModel):
+    id: str
     type: PatternType
     category_name: Optional[str] = None
     message: Optional[str] = None

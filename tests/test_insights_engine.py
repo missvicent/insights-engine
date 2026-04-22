@@ -313,6 +313,29 @@ class TestDetectCategorySpikes:
         assert result[0].icon == "movie"
         assert result[0].color == "#00ff00"
 
+    def test_ids_are_composite_type_plus_category_id(self):
+        # spike + new_category + category_removed each get a deterministic id
+        spike = detect_category_spikes(
+            [make_expense(200.0, category_id="cat-g")],
+            [make_expense(100.0, category_id="cat-g")],
+        )[0]
+        new_cat = detect_category_spikes(
+            [make_expense(75.0, category_id="cat-new")], []
+        )[0]
+        removed = detect_category_spikes(
+            [], [make_expense(200.0, category_id="cat-old")]
+        )[0]
+        assert spike.id == "spike:cat-g"
+        assert new_cat.id == "new_category:cat-new"
+        assert removed.id == "category_removed:cat-old"
+
+    def test_id_stable_across_identical_reruns(self):
+        txs_current = [make_expense(200.0, category_id="cat-g")]
+        txs_previous = [make_expense(100.0, category_id="cat-g")]
+        a = detect_category_spikes(txs_current, txs_previous)[0]
+        b = detect_category_spikes(txs_current, txs_previous)[0]
+        assert a.id == b.id
+
     def test_no_change_no_anomaly(self):
         result = detect_category_spikes([self._tx(100.0)], [self._tx(100.0)])
         assert result == []
@@ -412,6 +435,13 @@ class TestDetectBudgetOverspending:
         assert result[0].icon == "cart"
         assert result[0].color == "#ff0000"
 
+    def test_id_is_composite_type_plus_category_id(self):
+        result = detect_budget_overspending(
+            [self._tx(150.0, category_id="cat-g")],
+            [make_allocation(category_id="cat-g", amount=100.0)],
+        )
+        assert result[0].id == "budget_exceeded:cat-g"
+
 
 class TestDetectLargeSingleTransactions:
     def test_fewer_than_five_expenses_returns_empty(self):
@@ -486,6 +516,12 @@ class TestDetectLargeSingleTransactions:
         assert len(result) == 1
         assert result[0].icon == "gem"
         assert result[0].color == "#0000ff"
+
+    def test_id_is_composite_type_plus_transaction_id(self):
+        txs = [make_expense(100.0) for _ in range(5)]
+        txs.append(make_expense(5000.0, id="tx-outlier"))
+        result = detect_large_single_transactions(txs)
+        assert result[0].id == "large_single:tx-outlier"
 
 
 class TestDetectAnomalies:
@@ -627,6 +663,15 @@ class TestDetectWeekendSpend:
         result = detect_weekend_spend(df, total)
         assert result[0].data["weekend_daily"] == pytest.approx(333.33)
 
+    def test_id_matches_pattern_type(self):
+        rows = [
+            {"amount": 300.0, "date": date(2026, 4, 4)},
+            {"amount": 50.0, "date": date(2026, 4, 7)},
+        ]
+        df = _expense_df(rows)
+        result = detect_weekend_spend(df, 350.0)
+        assert result[0].id == "weekend_spend"
+
 
 class TestDetectEndOfPeriodConcentration:
     # Reuses _expense_df from Task 12 (same module).
@@ -694,6 +739,17 @@ class TestDetectEndOfPeriodConcentration:
         result = detect_end_of_period_concentration(df, date(2026, 4, 1), date(2026, 4, 3))
         # Only the Apr 3 row is >= Apr 3, so it hits 98%.
         assert len(result) == 1
+
+    def test_id_matches_pattern_type(self):
+        rows = [
+            {"amount": 10.0, "date": date(2026, 4, 1)},
+            {"amount": 500.0, "date": date(2026, 4, 25)},
+        ]
+        df = _expense_df(rows)
+        result = detect_end_of_period_concentration(
+            df, date(2026, 4, 1), date(2026, 4, 30)
+        )
+        assert result[0].id == "end_of_period_concentration"
 
 
 class TestDetectFrequentCategories:
@@ -766,6 +822,15 @@ class TestDetectFrequentCategories:
         result = detect_frequent_categories(df)
         assert result[0].type == "frequent_category"
 
+    def test_id_is_composite_type_plus_category_name(self):
+        rows = [
+            {"amount": 25.0, "date": date(2026, 4, 1), "category_name": "Groc"},
+            {"amount": 25.0, "date": date(2026, 4, 2), "category_name": "Groc"},
+        ]
+        df = _expense_df(rows)
+        result = detect_frequent_categories(df)
+        assert result[0].id == "frequent_category:Groc"
+
 
 class TestDetectPatterns:
     def test_empty_expenses(self):
@@ -819,19 +884,19 @@ class TestLiteralTypeValidation:
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
-            Anomaly(type="not_a_real_type", message="x", severity="low")
+            Anomaly(id="x", type="not_a_real_type", message="x", severity="low")
 
     def test_anomaly_rejects_bad_severity(self):
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
-            Anomaly(type="spike", message="x", severity="critical")
+            Anomaly(id="x", type="spike", message="x", severity="critical")
 
     def test_pattern_rejects_bad_type(self):
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
-            Pattern(type="not_a_pattern")
+            Pattern(id="x", type="not_a_pattern")
 
     def test_category_breakdown_carries_transaction_count(self):
         # Belt-and-suspenders regression: the original bug was passing
