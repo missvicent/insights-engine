@@ -7,6 +7,7 @@ Output: InsightSummary
 """
 
 from datetime import date, timedelta
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -198,6 +199,17 @@ def sum_expenses_by_category(txs: list[TransactionRow]) -> dict[str, float]:
     return d
 
 
+def _category_display_by_id(
+    transactions: list[TransactionRow],
+) -> dict[str, tuple[Optional[str], Optional[str], Optional[str]]]:
+    """Map category_id → (name, icon, color) over expense transactions."""
+    return {
+        t.category_id: (t.category_name, t.category_icon, t.category_color)
+        for t in transactions
+        if t.category_id and t.type == "expense"
+    }
+
+
 def detect_category_spikes(
     current: list[TransactionRow],
     previous: list[TransactionRow],
@@ -205,15 +217,12 @@ def detect_category_spikes(
     current_cats = sum_expenses_by_category(current)
     previous_cats = sum_expenses_by_category(previous)
     all_cats = set(current_cats.keys()) | set(previous_cats.keys())
-    name_by_id: dict[str, str] = {
-        t.category_id: t.category_name
-        for t in [*current, *previous]
-        if t.category_name and t.type == "expense" and t.category_id
-    }
+    display = _category_display_by_id([*current, *previous])
     result: list[Anomaly] = []
 
     for cat in all_cats:
-        display_name = name_by_id.get(cat, cat)
+        name, icon, color = display.get(cat, (None, None, None))
+        display_name = name or cat
         current_total = current_cats.get(cat, 0)
         prev_total = previous_cats.get(cat, 0)
         if prev_total < 0.01:
@@ -221,6 +230,8 @@ def detect_category_spikes(
                 Anomaly(
                     type="new_category",
                     category_name=display_name,
+                    icon=icon,
+                    color=color,
                     message=(
                         f"New spending in {display_name} - "
                         f"${current_total:.0f} this month (not previously tracked)"
@@ -234,6 +245,8 @@ def detect_category_spikes(
                 Anomaly(
                     type="category_removed",
                     category_name=display_name,
+                    icon=icon,
+                    color=color,
                     message=(
                         f"Spending in {display_name} was removed from the budget "
                         f"this month; ${prev_total:.0f} was removed from the budget"
@@ -250,6 +263,8 @@ def detect_category_spikes(
                     Anomaly(
                         type="spike",
                         category_name=display_name,
+                        icon=icon,
+                        color=color,
                         message=(
                             f"Spending in {display_name} increased by "
                             f"{change * 100:.0f}% this month "
@@ -269,21 +284,20 @@ def detect_budget_overspending(
     result: list[Anomaly] = []
     current_cats = sum_expenses_by_category(current)
     alloc_map = {a.category_id: a.amount for a in allocations if a.category_id}
-    name_by_id: dict[str, str] = {
-        t.category_id: t.category_name
-        for t in current
-        if t.category_name and t.type == "expense" and t.category_id
-    }
+    display = _category_display_by_id(current)
 
     for cat, total in current_cats.items():
         limit = alloc_map.get(cat, 0)
         if limit and total > limit:
-            display_name = name_by_id.get(cat, cat)
+            name, icon, color = display.get(cat, (None, None, None))
+            display_name = name or cat
             pct = total / limit * 100
             result.append(
                 Anomaly(
                     type="budget_exceeded",
                     category_name=display_name,
+                    icon=icon,
+                    color=color,
                     message=(
                         f"'{display_name}' budget exceeded by {pct:.0f}% of "
                         f"budget (${total:.0f} of ${limit:.0f})"
@@ -314,6 +328,8 @@ def detect_large_single_transactions(
             Anomaly(
                 type="large_single",
                 category_name=t.category_name,
+                icon=t.category_icon,
+                color=t.category_color,
                 message=(
                     f"Unusually large single transaction: ${t.amount:.0f} in {label}"
                 ),

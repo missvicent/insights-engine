@@ -129,6 +129,8 @@ class CategoryBreakdown(BaseModel):
 class Anomaly(BaseModel):
     type: AnomalyType
     category_name: Optional[str] = None
+    icon: Optional[str] = None
+    color: Optional[str] = None
     message: str
     severity: Literal["low", "medium", "high"]
     amount: Optional[float] = None

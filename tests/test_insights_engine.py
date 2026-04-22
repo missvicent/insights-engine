@@ -279,6 +279,40 @@ class TestDetectCategorySpikes:
         result = detect_category_spikes([self._tx(50.0)], [self._tx(100.0)])
         assert result == []
 
+    def test_spike_carries_icon_and_color(self):
+        current = [
+            make_expense(
+                200.0, category_icon="cart", category_color="#ff0000"
+            )
+        ]
+        previous = [
+            make_expense(
+                100.0, category_icon="cart", category_color="#ff0000"
+            )
+        ]
+        result = detect_category_spikes(current, previous)
+        assert result[0].type == "spike"
+        assert result[0].icon == "cart"
+        assert result[0].color == "#ff0000"
+
+    def test_new_category_carries_icon_and_color(self):
+        result = detect_category_spikes(
+            [make_expense(75.0, category_icon="movie", category_color="#00ff00")],
+            [],
+        )
+        assert result[0].type == "new_category"
+        assert result[0].icon == "movie"
+        assert result[0].color == "#00ff00"
+
+    def test_category_removed_carries_icon_and_color(self):
+        result = detect_category_spikes(
+            [],
+            [make_expense(200.0, category_icon="movie", category_color="#00ff00")],
+        )
+        assert result[0].type == "category_removed"
+        assert result[0].icon == "movie"
+        assert result[0].color == "#00ff00"
+
     def test_no_change_no_anomaly(self):
         result = detect_category_spikes([self._tx(100.0)], [self._tx(100.0)])
         assert result == []
@@ -361,6 +395,23 @@ class TestDetectBudgetOverspending:
         result = detect_budget_overspending(txs, allocs)
         assert len(result) == 2
 
+    def test_budget_exceeded_carries_icon_and_color(self):
+        current = [
+            make_expense(
+                150.0,
+                category_id="cat-g",
+                category_name="Groceries",
+                category_icon="cart",
+                category_color="#ff0000",
+            )
+        ]
+        result = detect_budget_overspending(
+            current, [make_allocation(amount=100.0)]
+        )
+        assert result[0].type == "budget_exceeded"
+        assert result[0].icon == "cart"
+        assert result[0].color == "#ff0000"
+
 
 class TestDetectLargeSingleTransactions:
     def test_fewer_than_five_expenses_returns_empty(self):
@@ -420,6 +471,21 @@ class TestDetectLargeSingleTransactions:
         txs.append(make_expense(6000.0, merchant="B"))
         result = detect_large_single_transactions(txs)
         assert len(result) == 2
+
+    def test_outlier_carries_icon_and_color(self):
+        txs = [make_expense(100.0) for _ in range(5)]
+        txs.append(
+            make_expense(
+                5000.0,
+                merchant="Rolex",
+                category_icon="gem",
+                category_color="#0000ff",
+            )
+        )
+        result = detect_large_single_transactions(txs)
+        assert len(result) == 1
+        assert result[0].icon == "gem"
+        assert result[0].color == "#0000ff"
 
 
 class TestDetectAnomalies:
