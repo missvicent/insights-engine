@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     supabase_url: str
     supabase_anon_key: str
     supabase_jwt_secret: str
+    ai_model: str
 
     class Config:
         env_file = ".env"

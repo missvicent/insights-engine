@@ -2,3 +2,7 @@ venv/
 .env
 __pycache__/
 *.pyc
+
+
+#Ignore cursor AI rules
+.cursor/rules/codacy.mdc
