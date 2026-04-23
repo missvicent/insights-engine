@@ -11,7 +11,7 @@ Usage:
 
 Then:
     curl -H "Authorization: Bearer $(python scripts/dev_token.py)" \\
-        "http://localhost:8000/insights?budget_id=...&window=1m"
+        "http://localhost:8000/insights?budget_id=...&window=30d"
 """
 
 from __future__ import annotations

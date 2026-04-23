@@ -61,7 +61,15 @@ Open `.env` and set:
 Start the development server:
 
 ```bash
-uvicorn app.main:app --reload
+./scripts/dev.sh
+```
+
+This runs `uvicorn` with hot-reload scoped to `app/` so writes under
+`venv/`, `.codacy/`, `.pytest_cache/`, or `__pycache__/` don't trigger
+spurious restarts. Override host or port with env vars:
+
+```bash
+HOST=0.0.0.0 PORT=8080 ./scripts/dev.sh
 ```
 
 The API will be available at `http://localhost:8000`.

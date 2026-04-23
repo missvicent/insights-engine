@@ -21,14 +21,7 @@ PatternType = Literal[
     "recurring_growth",
 ]
 
-InsightWindow = Literal[
-    "1m",
-    "3m",
-    "6m",
-    "1y",
-    "current_year",
-    "last_year",
-]
+InsightWindow = Literal["7d", "15d", "30d", "3m", "6m", "12m"]
 
 
 class TransactionRow(BaseModel):
@@ -65,7 +58,7 @@ class BudgetRow(BaseModel):
     id: str
     user_id: str
     name: str
-    period: str  # 'monthly'| 'daily'
+    period: str  # 'monthly' | 'yearly'
     amount: float
     start_date: date
     end_date: date
@@ -134,14 +127,18 @@ class CategoryBreakdown(BaseModel):
 
 
 class Anomaly(BaseModel):
+    id: str
     type: AnomalyType
     category_name: Optional[str] = None
+    icon: Optional[str] = None
+    color: Optional[str] = None
     message: str
     severity: Literal["low", "medium", "high"]
     amount: Optional[float] = None
 
 
 class Pattern(BaseModel):
+    id: str
     type: PatternType
     category_name: Optional[str] = None
     message: Optional[str] = None
@@ -193,6 +190,8 @@ class InsightSummary(BaseModel):
     # raw counts for context
     transaction_count: int
     recurring_count: int
+
+    next_action_horizon_days: int
 
     # ── API response shapes ───────────────────────────────────────────────────────
 

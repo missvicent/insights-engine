@@ -6,8 +6,8 @@ Input: raw DB rows
 Output: InsightSummary
 """
 
-import calendar
 from datetime import date, timedelta
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -36,38 +36,54 @@ def resolve_window(
     today: date,
 ) -> tuple[date, date, date, date]:
     """Return (current_start, current_end, previous_start, previous_end)."""
-    if window in {"1m", "3m", "6m", "1y"}:
-        span_days = {"1m": 30, "3m": 90, "6m": 180, "1y": 365}[window]
-        current_end = today
-        current_start = today - timedelta(days=span_days)
-        previous_end = current_start - timedelta(days=1)
-        previous_start = previous_end - timedelta(days=span_days)
-        return current_start, current_end, previous_start, previous_end
+    span_days = {
+        "7d": 7,
+        "15d": 15,
+        "30d": 30,
+        "3m": 90,
+        "6m": 180,
+        "12m": 365,
+    }.get(window)
+    if span_days is None:
+        raise ValueError(f"unknown window: {window}")
 
-    if window == "current_year":
-        current_start = date(today.year, 1, 1)
-        current_end = today
-        previous_start = date(today.year - 1, 1, 1)
-        previous_end = _clamp_to_month_end(today.year - 1, today.month, today.day)
-        return current_start, current_end, previous_start, previous_end
-
-    if window == "last_year":
-        current_start = date(today.year - 1, 1, 1)
-        current_end = date(today.year - 1, 12, 31)
-        previous_start = date(today.year - 2, 1, 1)
-        previous_end = date(today.year - 2, 12, 31)
-        return current_start, current_end, previous_start, previous_end
-
-    raise ValueError(f"unknown window: {window}")
+    current_end = today
+    current_start = today - timedelta(days=span_days)
+    previous_end = current_start - timedelta(days=1)
+    previous_start = previous_end - timedelta(days=span_days)
+    return current_start, current_end, previous_start, previous_end
 
 
-def _clamp_to_month_end(year: int, month: int, day: int) -> date:
-    """Build a date, clamping day to the last valid day of that month.
+_HORIZON_DAYS: dict[InsightWindow, int] = {
+    "7d": 3,
+    "15d": 7,
+    "30d": 7,
+    "3m": 14,
+    "6m": 30,
+    "12m": 30,
+}
 
-    Handles Feb 29 → Feb 28 when moving into a non-leap year.
+
+def _horizon_for_window(window: InsightWindow) -> int:
+    """Days of forward-looking action the deterministic signal supports."""
+    return _HORIZON_DAYS[window]
+
+
+_ALLOWED_WINDOWS: dict[str, set[InsightWindow]] = {
+    "monthly": {"7d", "15d", "30d"},
+    "yearly": {"3m", "6m", "12m"},
+}
+
+
+def allowed_windows_for_period(period: str) -> set[InsightWindow]:
+    """Which InsightWindow values are valid for a budget with this period.
+
+    Raises ValueError for unknown periods.
     """
-    last_day = calendar.monthrange(year, month)[1]
-    return date(year, month, min(day, last_day))
+    try:
+        return _ALLOWED_WINDOWS[period]
+    except KeyError as e:
+        raise ValueError(f"unknown budget period: {period!r}") from e
 
 
 def calculate_totals(transactions: list[TransactionRow]) -> FinancialTotals:
@@ -183,6 +199,17 @@ def sum_expenses_by_category(txs: list[TransactionRow]) -> dict[str, float]:
     return d
 
 
+def _category_display_by_id(
+    transactions: list[TransactionRow],
+) -> dict[str, tuple[Optional[str], Optional[str], Optional[str]]]:
+    """Map category_id → (name, icon, color) over expense transactions."""
+    return {
+        t.category_id: (t.category_name, t.category_icon, t.category_color)
+        for t in transactions
+        if t.category_id and t.type == "expense"
+    }
+
+
 def detect_category_spikes(
     current: list[TransactionRow],
     previous: list[TransactionRow],
@@ -190,22 +217,22 @@ def detect_category_spikes(
     current_cats = sum_expenses_by_category(current)
     previous_cats = sum_expenses_by_category(previous)
     all_cats = set(current_cats.keys()) | set(previous_cats.keys())
-    name_by_id: dict[str, str] = {
-        t.category_id: t.category_name
-        for t in [*current, *previous]
-        if t.category_name and t.type == "expense" and t.category_id
-    }
+    display = _category_display_by_id([*current, *previous])
     result: list[Anomaly] = []
 
     for cat in all_cats:
-        display_name = name_by_id.get(cat, cat)
+        name, icon, color = display.get(cat, (None, None, None))
+        display_name = name or cat
         current_total = current_cats.get(cat, 0)
         prev_total = previous_cats.get(cat, 0)
         if prev_total < 0.01:
             result.append(
                 Anomaly(
+                    id=f"new_category:{cat}",
                     type="new_category",
                     category_name=display_name,
+                    icon=icon,
+                    color=color,
                     message=(
                         f"New spending in {display_name} - "
                         f"${current_total:.0f} this month (not previously tracked)"
@@ -217,8 +244,11 @@ def detect_category_spikes(
         elif prev_total > 0 and current_total < 0.01:
             result.append(
                 Anomaly(
+                    id=f"category_removed:{cat}",
                     type="category_removed",
                     category_name=display_name,
+                    icon=icon,
+                    color=color,
                     message=(
                         f"Spending in {display_name} was removed from the budget "
                         f"this month; ${prev_total:.0f} was removed from the budget"
@@ -233,8 +263,11 @@ def detect_category_spikes(
                 severity = "high" if change > HIGH_SEVERITY_THRESHOLD else "medium"
                 result.append(
                     Anomaly(
+                        id=f"spike:{cat}",
                         type="spike",
                         category_name=display_name,
+                        icon=icon,
+                        color=color,
                         message=(
                             f"Spending in {display_name} increased by "
                             f"{change * 100:.0f}% this month "
@@ -254,21 +287,21 @@ def detect_budget_overspending(
     result: list[Anomaly] = []
     current_cats = sum_expenses_by_category(current)
     alloc_map = {a.category_id: a.amount for a in allocations if a.category_id}
-    name_by_id: dict[str, str] = {
-        t.category_id: t.category_name
-        for t in current
-        if t.category_name and t.type == "expense" and t.category_id
-    }
+    display = _category_display_by_id(current)
 
     for cat, total in current_cats.items():
         limit = alloc_map.get(cat, 0)
         if limit and total > limit:
-            display_name = name_by_id.get(cat, cat)
+            name, icon, color = display.get(cat, (None, None, None))
+            display_name = name or cat
             pct = total / limit * 100
             result.append(
                 Anomaly(
+                    id=f"budget_exceeded:{cat}",
                     type="budget_exceeded",
                     category_name=display_name,
+                    icon=icon,
+                    color=color,
                     message=(
                         f"'{display_name}' budget exceeded by {pct:.0f}% of "
                         f"budget (${total:.0f} of ${limit:.0f})"
@@ -297,8 +330,11 @@ def detect_large_single_transactions(
         label = t.merchant or t.description or t.category_name or "uncategorized"
         result.append(
             Anomaly(
+                id=f"large_single:{t.id}",
                 type="large_single",
                 category_name=t.category_name,
+                icon=t.category_icon,
+                color=t.category_color,
                 message=(
                     f"Unusually large single transaction: ${t.amount:.0f} in {label}"
                 ),
@@ -359,6 +395,7 @@ def detect_weekend_spend(df: pd.DataFrame, total_expenses: float) -> list[Patter
         ratio = weekend_daily / weekday_daily
         return [
             Pattern(
+                id="weekend_spend",
                 type="weekend_spend",
                 message=(
                     f"You spend {ratio:.1f}× more per day on weekends "
@@ -394,6 +431,7 @@ def detect_end_of_period_concentration(
         pct = (end_total / total) * 100
         return [
             Pattern(
+                id="end_of_period_concentration",
                 type="end_of_period_concentration",
                 message=(f"{pct:.1f}% of spending in the last quarter of the window"),
                 data={},
@@ -422,6 +460,7 @@ def detect_frequent_categories(df: pd.DataFrame) -> list[Pattern]:
         if total > 0:
             patterns.append(
                 Pattern(
+                    id=f"frequent_category:{category}",
                     category_name=category,
                     type="frequent_category",
                     message=(
@@ -473,6 +512,7 @@ def build_summary(
     current: list[TransactionRow],
     previous: list[TransactionRow],
     goals: list[GoalRow],
+    window: InsightWindow,
     window_start: date,
     window_end: date,
 ) -> InsightSummary:
@@ -500,6 +540,7 @@ def build_summary(
         debt=None,
         transaction_count=len(current),
         recurring_count=sum(1 for t in current if t.is_recurring),
+        next_action_horizon_days=_horizon_for_window(window),
     )
 
 

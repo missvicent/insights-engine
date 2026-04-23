@@ -29,6 +29,19 @@ def _budget_row(user_id: str = "user-1") -> dict:
     }
 
 
+def _yearly_budget_row(user_id: str = "user-1") -> dict:
+    return {
+        "id": "budget-yearly",
+        "user_id": user_id,
+        "name": "2026",
+        "period": "yearly",
+        "amount": 60000.0,
+        "start_date": date(2026, 1, 1).isoformat(),
+        "end_date": date(2026, 12, 31).isoformat(),
+        "is_active": True,
+    }
+
+
 @pytest.fixture
 def client() -> TestClient:
     return TestClient(app)
@@ -51,19 +64,73 @@ class TestGetInsights:
                 "goals": [],
             }
         )
-        resp = client.get("/insights?budget_id=budget-1&window=1m")
+        resp = client.get("/insights?budget_id=budget-1&window=30d")
         assert resp.status_code == 200
         body = resp.json()
         assert body["summary"]["budget_id"] == "budget-1"
 
     def test_missing_authorization_is_401(self, client):
-        resp = client.get("/insights?budget_id=budget-1&window=1m")
+        resp = client.get("/insights?budget_id=budget-1&window=30d")
         assert resp.status_code == 401
 
     def test_budget_not_found_is_404(self, client):
         app.dependency_overrides[get_user_ctx] = lambda: make_user_ctx(
             tables={"budgets": []}
         )
-        resp = client.get("/insights?budget_id=missing&window=1m")
+        resp = client.get("/insights?budget_id=missing&window=30d")
         assert resp.status_code == 404
         assert resp.json()["detail"] == "budget not found"
+
+    def test_monthly_window_on_yearly_budget_is_422(self, client):
+        app.dependency_overrides[get_user_ctx] = lambda: make_user_ctx(
+            tables={
+                "budgets": [_yearly_budget_row()],
+                "allocations": [],
+                "transactions": [],
+                "goals": [],
+            }
+        )
+        resp = client.get("/insights?budget_id=budget-yearly&window=7d")
+        assert resp.status_code == 422
+        assert "yearly" in resp.json()["detail"]
+        assert "'7d'" in resp.json()["detail"]
+
+    def test_yearly_window_on_monthly_budget_is_422(self, client):
+        app.dependency_overrides[get_user_ctx] = lambda: make_user_ctx(
+            tables={
+                "budgets": [_budget_row()],
+                "allocations": [],
+                "transactions": [],
+                "goals": [],
+            }
+        )
+        resp = client.get("/insights?budget_id=budget-1&window=6m")
+        assert resp.status_code == 422
+        assert "monthly" in resp.json()["detail"]
+        assert "'6m'" in resp.json()["detail"]
+
+    def test_response_carries_horizon_for_monthly(self, client):
+        app.dependency_overrides[get_user_ctx] = lambda: make_user_ctx(
+            tables={
+                "budgets": [_budget_row()],
+                "allocations": [],
+                "transactions": [],
+                "goals": [],
+            }
+        )
+        resp = client.get("/insights?budget_id=budget-1&window=30d")
+        assert resp.status_code == 200
+        assert resp.json()["summary"]["next_action_horizon_days"] == 7
+
+    def test_response_carries_horizon_for_yearly(self, client):
+        app.dependency_overrides[get_user_ctx] = lambda: make_user_ctx(
+            tables={
+                "budgets": [_yearly_budget_row()],
+                "allocations": [],
+                "transactions": [],
+                "goals": [],
+            }
+        )
+        resp = client.get("/insights?budget_id=budget-yearly&window=6m")
+        assert resp.status_code == 200
+        assert resp.json()["summary"]["next_action_horizon_days"] == 30

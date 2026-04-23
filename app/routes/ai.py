@@ -2,6 +2,7 @@ from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.concurrency import run_in_threadpool
 
 from app.context import UserContext
 from app.db.client import (
@@ -10,8 +11,9 @@ from app.db.client import (
     fetch_goals,
     fetch_transactions,
 )
-from app.models.schemas import InsightsQuery, InsightsResponse
+from app.models.schemas import AIInsightsResponse, InsightsQuery
 from app.routes.deps import get_user_ctx
+from app.services.ai_service import generate_ai_insights
 from app.services.insights_engine import (
     allowed_windows_for_period,
     build_summary,
@@ -22,13 +24,13 @@ from app.services.insights_engine import (
 router = APIRouter()
 
 
-@router.get("/insights", responses={404: {"description": "Budget not found"}})
-def get_insights(
+@router.get("/ai-insights", responses={404: {"description": "Budget not found"}})
+async def get_ai_insights(
     q: Annotated[InsightsQuery, Depends()],
     ctx: Annotated[UserContext, Depends(get_user_ctx)],
-) -> InsightsResponse:
+) -> AIInsightsResponse:
     try:
-        budget, allocations = fetch_budget(ctx, q.budget_id)
+        budget, allocations = await run_in_threadpool(fetch_budget, ctx, q.budget_id)
     except BudgetNotFound:
         raise HTTPException(status_code=404, detail="budget not found") from None
 
@@ -41,10 +43,13 @@ def get_insights(
     current_start, current_end, prev_start, prev_end = resolve_window(
         q.window, date.today()
     )
-    budget_id = q.budget_id
-    current = fetch_transactions(ctx, current_start, current_end, budget_id)
-    previous = fetch_transactions(ctx, prev_start, prev_end, budget_id)
-    goals = fetch_goals(ctx)
+    current = await run_in_threadpool(
+        fetch_transactions, ctx, current_start, current_end, q.budget_id
+    )
+    previous = await run_in_threadpool(
+        fetch_transactions, ctx, prev_start, prev_end, q.budget_id
+    )
+    goals = await run_in_threadpool(fetch_goals, ctx)
 
     summary = build_summary(
         budget=budget,
@@ -56,4 +61,5 @@ def get_insights(
         window_start=current_start,
         window_end=current_end,
     )
-    return InsightsResponse(summary=summary)
+    ai = await generate_ai_insights(summary)
+    return AIInsightsResponse(summary=summary, ai=ai)
