@@ -104,28 +104,35 @@ The architecture rules from `CLAUDE.md` still hold: `insights_engine.py` is pure
 
 Verified 2026-04-23 via Supabase dashboard screenshot: Authentication → Sign In / Providers → Third-Party Auth → **Clerk is enabled**, domain `https://worthy-hornet-72.clerk.accounts.dev`. Supabase already fetches Clerk's JWKS when verifying incoming tokens. No action needed.
 
-### 3.2 Clerk JWT template — **pending**
+### 3.2 Clerk JWT template — **done ✅ (2026-04-23)**
 
-In the Clerk dashboard, open **JWT Templates → `supabase`**. Currently: *Custom signing key* is ON, algorithm is **HS256**, signing key is the Supabase JWT secret.
+**Verified from dashboard screenshot:**
 
-Actions:
-1. **Turn off "Custom signing key"**. The algorithm selector switches to **RS256** (Clerk will now sign with its own rotating RSA key pair).
-2. Copy the **Issuer** field verbatim — this is your `CLERK_ISSUER` (`https://worthy-hornet-72.clerk.accounts.dev`).
-3. Copy the **JWKS Endpoint** URL — the backend can derive this from the issuer, but having it explicit is useful for debugging. You won't paste it into the backend; the backend constructs it.
-4. Save.
+- Template name: `supabase`
+- *Custom signing key* is **OFF** → Clerk signs with its own rotating RS256 key pair.
+- Issuer: `https://worthy-hornet-72.clerk.accounts.dev` (this is your `CLERK_ISSUER`).
+- JWKS Endpoint: `https://worthy-hornet-72.clerk.accounts.dev/.well-known/jwks.json` (derivable from issuer; shown for debugging).
+- Token lifetime: 60 s. Allowed clock skew: **5 s** — the backend's `jwt.decode` should pass `leeway=5` to match (wired into B.3).
+- Claims template includes `aud:"authenticated"` and `role:"authenticated"`; `sub`, `iss`, `exp`, `iat` are auto-included by Clerk's default claims.
 
-The moment you save: tokens Clerk *newly* mints are RS256. Tokens already in the wild stay HS256 until their 60-second `exp` lapses. Because Supabase is configured for Third-Party Auth (§3.1), both types validate — no brief outage.
+The moment the toggle was saved: Clerk newly mints RS256 tokens. Any HS256 tokens already in flight expire within 60 s. Supabase's Third-Party Auth provider (§3.1) validates both, so the flip was seamless from Supabase's side. The backend still decodes HS256 until Phase B.3 lands — after B.3 merges, HS256 tokens will be rejected 401 (which is the point).
 
-### 3.3 Supabase RLS policies — **read-through required**
+### 3.3 Supabase RLS policies — **confirmed clean ✅**
 
-**Confirmed from screenshots (2026-04-23):**
+**Verified 2026-04-23 via Supabase dashboard:**
+
 - RLS is *enabled* on user-owned tables.
 - `user_id` columns are `text`, storing Clerk ids like `user_33IZQVpXj8DAGKJyec47RxZanBE`.
 - `budgets.user_id` column default is `(auth.jwt() ->> 'sub')::text` — matches the Clerk Third-Party Auth idiom.
+- Policy bodies on `budgets`, `transactions`, `goals`, `debts`, `recurring_transactions` are all `(auth.jwt() ->> 'sub'::text) = user_id` on both `USING` and `WITH CHECK`. `allocations` inherits transitively via an `EXISTS` subquery against `budgets`. No `auth.uid()`, no UUID casts, no non-`sub` claim references.
+- End-to-end impersonation: 8 budget rows visible to `user_33IZQVpXj8DAGKJyec47RxZanBE` with a synthetic Clerk claims blob. `claims → auth.jwt() → ->> 'sub' → user_id` matches byte-for-byte.
 
-**Not yet confirmed:** the *body* of each RLS policy (`USING` / `WITH CHECK`). Everything above the policy layer is consistent with Clerk — policies are the last thing to read through.
+**Nothing to do here for the migration.** The block below is reference material for re-auditing after a Supabase migration or when a new user-owned table is added.
 
-**What to check.** Run this in the Supabase SQL editor to dump every policy body at once:
+<details>
+<summary>Reusable audit queries</summary>
+
+**1. Dump every policy body in one shot:**
 
 ```sql
 SELECT schemaname, tablename, policyname, cmd, qual, with_check
@@ -138,25 +145,42 @@ WHERE schemaname = 'public'
 ORDER BY tablename, policyname;
 ```
 
-Scan the `qual` and `with_check` columns. The policies should compare `user_id` against the Clerk sub as text. Given the column default uses `auth.jwt() ->> 'sub'`, the natural matching idiom is:
+Expected idiom for each `qual` / `with_check`:
 
 ```sql
 USING (user_id = (auth.jwt() ->> 'sub'))
 ```
 
-Anything that casts to `uuid`, relies on `auth.uid()`, or pulls from a different claim is a policy to review in light of Clerk's token shape. If the audit comes back clean, there's nothing to do here.
+Flag anything that casts to `uuid`, relies on `auth.uid()`, or pulls from a different claim.
 
-Sanity check after the read-through (or at any point to confirm a specific user can reach their rows):
+**2. End-to-end impersonation** — run as service-role, highlight the entire block, Run once. `set local` only holds inside the transaction, and the Supabase SQL editor opens a fresh session per Run, so splitting this across multiple Runs will give you a NULL `auth.jwt()`:
 
 ```sql
--- Impersonates a Clerk user; run as service-role.
+begin;
 set local role authenticated;
-set local request.jwt.claim.sub = 'user_33IZQVpXj8DAGKJyec47RxZanBE';
-select count(*) from budgets;
--- Expect: > 0 for a user you know has budgets.
+-- auth.jwt() reads the full claims blob from request.jwt.claim / request.jwt.claims,
+-- NOT the per-claim GUC request.jwt.claim.sub. Set the whole JSON object.
+set local request.jwt.claims =
+  '{"sub":"user_33IZQVpXj8DAGKJyec47RxZanBE","role":"authenticated"}';
+
+select
+  auth.jwt()                                                     as claims,
+  auth.jwt() ->> 'sub'                                           as claim_sub,
+  (select user_id from budgets
+     where user_id = 'user_33IZQVpXj8DAGKJyec47RxZanBE' limit 1) as row_user_id,
+  (select count(*) from budgets)                                 as visible_budgets;
+
+rollback;
 ```
 
-Zero for a user with data ⇒ a policy body is comparing against the wrong claim.
+Interpret the one-row result:
+
+- `claims` NULL ⇒ the `set local` didn't reach this transaction; re-run the block as a single batch.
+- `claim_sub` set but `row_user_id` NULL ⇒ the user genuinely has no rows; pick a user that does.
+- `claim_sub ≠ row_user_id` ⇒ whitespace/casing drift in one of them.
+- All four populated and `visible_budgets > 0` ⇒ policies are doing their job.
+
+</details>
 
 ---
 
@@ -164,7 +188,7 @@ Zero for a user with data ⇒ a policy body is comparing against the wrong claim
 
 ### Phase A — dependencies
 
-#### A.1 `[USER]` Upgrade PyJWT with crypto support
+#### A.1 `[USER]` Upgrade PyJWT with crypto support — **done ✅ (2026-04-23)**
 
 **Context:** `pyjwt` alone parses JWTs but cannot verify RSA signatures. The `[crypto]` extra pulls in `cryptography`, which provides the RSA primitives.
 
@@ -180,7 +204,7 @@ to
 pyjwt[crypto]==2.9.0
 ```
 
-**Done when:** `pip install -r requirements.txt` completes without error and `python -c "from jwt import PyJWKClient"` returns cleanly.
+**Done when:** `pip3 install -r requirements.txt` completes without error and `python -c "from jwt import PyJWKClient"` returns cleanly.
 
 ---
 
@@ -250,7 +274,7 @@ Also create `app/auth/__init__.py` (empty) so Python treats `app/auth/` as a pac
 - **Why a factory, not a module-level instance?** `PyJWKClient` does the first fetch lazily on first `get_signing_key_from_jwt` call, not at construction — so building it at import time is fine. But wrapping it in a factory means tests can monkeypatch `get_jwks_client` to return a stub without touching the real HTTP layer.
 - **Why `lru_cache` with `maxsize=1` instead of a module-level global?** Same behaviour, but with a convention tests already use (`get_settings()` does the same). Consistency makes the codebase easier to hold in your head.
 
-**Done when:** `python -c "from app.auth.jwks import get_jwks_client; print(get_jwks_client())"` prints a `PyJWKClient` instance (no network call yet — first fetch is lazy).
+**Done when:** ` venv/bin/python -c "from app.auth.jwks import get_jwks_client; print(get_jwks_client())"` prints a `PyJWKClient` instance (no network call yet — first fetch is lazy).
 
 #### B.3 `[USER]` Rewrite `get_user_ctx` for RS256
 
@@ -297,6 +321,7 @@ def get_user_ctx(
             algorithms=["RS256"],
             audience="authenticated",
             issuer=settings.clerk_issuer,
+            leeway=5,  # matches Clerk's dashboard "Allowed clock skew: 5s"
             options={"require": ["exp", "sub", "aud", "iss"]},
         )
     except jwt.ExpiredSignatureError:
