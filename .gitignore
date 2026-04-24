@@ -1,4 +1,12 @@
 venv/
 .env
+.env.backup.*
+.env.*.backup
+.env.bak
+.env.local
 __pycache__/
 *.pyc
+
+
+#Ignore cursor AI rules
+.cursor/rules/codacy.mdc

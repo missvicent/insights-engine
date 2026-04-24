@@ -1,13 +1,26 @@
-from functools import lru_cache
 from datetime import date
-from tkinter import N
+from functools import lru_cache
+
 from pydantic_settings import BaseSettings
-from supabase import create_client, Client
-from app.models.schemas import TransactionRow, BudgetRow, AllocationRow, GoalRow, DebtRow, RecurringRow
+from supabase import Client, create_client
+
+from app.context import UserContext
+from app.models.schemas import (
+    AllocationRow,
+    BudgetRow,
+    DebtRow,
+    GoalRow,
+    RecurringRow,
+    TransactionRow,
+)
+
 
 class Settings(BaseSettings):
     supabase_url: str
-    supabase_service_key: str
+    supabase_anon_key: str
+    clerk_issuer: str
+    clerk_jwks_url: str | None = None        
+    ai_model: str
 
     class Config:
         env_file = ".env"
@@ -19,129 +32,130 @@ def get_settings() -> Settings:
     return Settings()
 
 
-# service key bypasses RLS — safe for backend only, never expose to frontend
-@lru_cache
-def get_supabase() -> Client:
+def build_user_client(access_token: str) -> Client:
+    """Build a per-request Supabase client authenticated as the end user.                                                                                                                                                                                                                                      
+                                                         
+      The anon key admits the request to PostgREST (no grants on its own —
+      RLS is enabled on every user-owned table). The Clerk JWT is attached                                                                                                                                                                                                                                       
+      via postgrest.auth so Supabase's Third-Party Auth verifier populates                                                                                                                                                                                                                                       
+      auth.jwt(); RLS policies then enforce access by comparing                                                                                                                                                                                                                                                  
+      user_id = (auth.jwt() ->> 'sub') — stored as text, not UUID, because                                                                                                                                                                                                                                       
+      Clerk subs (e.g. user_33IZ...) aren't UUID-shaped.                                                                                                                                                                                                                                                         
+      """       
     s = get_settings()
+    client = create_client(s.supabase_url, s.supabase_anon_key)
+    client.postgrest.auth(access_token)
+    return client
 
-    return create_client(s.supabase_url, s.supabase_service_key)
-    
 
 def fetch_transactions(
-    user_id: str,
+    ctx: UserContext,
     start: date,
     end: date,
-    db: Client | None = None,
+    budget_id: str | None = None,
 ) -> list[TransactionRow]:
-    if db is None:
-        db = get_supabase()
-    
+    """Fetch transactions for `ctx.user_id` between `start` and `end` (inclusive).
 
-    response = (db.table("transactions")
-    .select("*, categories(name, icon, color)")
-    .eq("user_id", user_id)
-    .gte("transaction_date", start.isoformat())
-    .lte("transaction_date", end.isoformat())
-    .execute()
+    When `budget_id` is provided, results are scoped to that budget.
+    RLS enforces ownership; the explicit user_id filter is belt-and-suspenders.
+    """
+    query = (
+        ctx.db.table("transactions")
+        .select("*, categories(name, icon, color)")
+        .eq("user_id", ctx.user_id)
+        .gte("transaction_date", start.isoformat())
+        .lte("transaction_date", end.isoformat())
     )
-    
-    rows = []
+    if budget_id is not None:
+        query = query.eq("budget_id", budget_id)
+    response = query.execute()
 
+    rows = []
     for row in response.data:
         cat = row.pop("categories", None) or {}
-        rows.append(TransactionRow(
-            **row, 
-            category_name=cat.get("name"), 
-            category_icon=cat.get("icon"), 
-            category_color=cat.get("color")))
-
+        rows.append(
+            TransactionRow(
+                **row,
+                category_name=cat.get("name"),
+                category_icon=cat.get("icon"),
+                category_color=cat.get("color"),
+            )
+        )
     return rows
-    
-    
-def fetch_budgets(
-    user_id: str,
-    db: Client | None = None,
-) -> tuple[list[BudgetRow], list[AllocationRow]]:
-    
-    if db is None:
-        db = get_supabase()
 
-    response = (db.table("budgets")
-    .select("*")
-    .eq("user_id", user_id)
-    .execute()
+
+class BudgetNotFound(Exception):
+    """Raised when a budget_id does not exist or is not owned by the user."""
+
+
+def fetch_budget(
+    ctx: UserContext,
+    budget_id: str,
+) -> tuple[BudgetRow, list[AllocationRow]]:
+    """Fetch one budget (authorized to ctx.user_id) and its allocations.
+
+    Raises BudgetNotFound when the row is missing or not owned by the user.
+    """
+    budget_response = (
+        ctx.db.table("budgets")
+        .select("*")
+        .eq("id", budget_id)
+        .eq("user_id", ctx.user_id)
+        .limit(1)
+        .execute()
     )
 
-    budgets = [BudgetRow(**row) for row in response.data]
+    if not budget_response.data:
+        raise BudgetNotFound(budget_id)
 
-    if not budgets:
-        return [], []
+    budget = BudgetRow(**budget_response.data[0])
 
-    
-    budget_ids = [b.id for b in budgets]
-
-    alloc_response = (db.table("allocations")
-    .select("*, categories(name)")
-    .in_("budget_id", budget_ids)
-    .execute()
+    alloc_response = (
+        ctx.db.table("allocations")
+        .select("*, categories(name)")
+        .eq("budget_id", budget.id)
+        .execute()
     )
 
-    allocations = []
+    allocations: list[AllocationRow] = []
     for alloc in alloc_response.data:
         cat = alloc.pop("categories", None) or {}
-        allocations.append(AllocationRow(
-            **alloc,
-            category_name=cat.get("name")
-        ))
+        allocations.append(AllocationRow(**alloc, category_name=cat.get("name")))
 
-    return budgets, allocations
+    return budget, allocations
 
 
-def fetch_goals(
-    user_id: str,
-    db: Client | None = None,
-) -> list[GoalRow]:
-    if db is None:
-        db = get_supabase()
-
-    response = (db.table("goals")
-    .select("id, name, target_amount, current_amount, target_date, is_achieved")
-    .eq("user_id", user_id)
-    .eq('is_achieved', False)
-    .execute()
+def fetch_goals(ctx: UserContext) -> list[GoalRow]:
+    response = (
+        ctx.db.table("goals")
+        .select("id, name, target_amount, current_amount, target_date, is_achieved")
+        .eq("user_id", ctx.user_id)
+        .eq("is_achieved", False)
+        .execute()
     )
-
     return [GoalRow(**row) for row in response.data]
 
 
-def fetch_debt(
-    user_id: str,
-    db: Client | None = None,
-) -> list[DebtRow]:
-    if db is None:
-        db = get_supabase()
-
-    response = (db.table("debts")
-    .select("id, name, type, current_balance, interest_rate, minimum_payment, is_active")
-    .eq("user_id", user_id)
-    .execute()
+def fetch_debt(ctx: UserContext) -> list[DebtRow]:
+    response = (
+        ctx.db.table("debts")
+        .select(
+            "id, name, type, current_balance, interest_rate, minimum_payment, is_active"
+        )
+        .eq("user_id", ctx.user_id)
+        .execute()
     )
-
     return [DebtRow(**row) for row in response.data]
 
 
-def fetch_recurring(
-        user_id: str,
-        db: Client | None = None,
-    ) -> list[RecurringRow]:
-        if db is None:
-            db = get_supabase()
-
-        response = (db.table("recurring_transactions")
-        .select("id, name, type, amount, frequency, next_occurrence, is_active, is_paused")
-        .eq("user_id", user_id)
+def fetch_recurring(ctx: UserContext) -> list[RecurringRow]:
+    response = (
+        ctx.db.table("recurring_transactions")
+        .select(
+            "id, name, type, amount, frequency, next_occurrence, is_active, is_paused"
+        )
+        .eq("user_id", ctx.user_id)
         .eq("is_active", True)
         .execute()
-        )
-
-        return [RecurringRow(**row) for row in response.data]
+    )
+    return [RecurringRow(**row) for row in response.data]
