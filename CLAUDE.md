@@ -8,6 +8,7 @@ and generates AI recommendations via LiteLLM + Anthropic Claude.
 - Python 3.12
 - FastAPI + Uvicorn
 - Supabase (PostgreSQL) via supabase-py
+- [Clerk](https://clerk.com) as Supabase [Third-Party Auth provider](https://clerk.com/docs/integrations/databases/supabase) — RS256 JWTs verified via JWKS
 - Pandas for data aggregation
 - LiteLLM for AI provider abstraction
 - Pydantic v2 for validation
@@ -16,12 +17,14 @@ and generates AI recommendations via LiteLLM + Anthropic Claude.
 ## Structure
 
 app/
+  auth/jwks.py           # Cached PyJWKClient factory (Clerk JWKS)
   db/client.py           # Supabase connection + all query functions
   models/schemas.py      # All Pydantic models
   services/
     insights_engine.py   # Core logic — no AI here
     ai_service.py        # AI layer — no computation here
   routes/
+    deps.py              # get_user_ctx — the single auth dependency
     insights.py          # GET /insights
     ai.py                # GET /ai-insights
   main.py                # FastAPI app + CORS
@@ -57,6 +60,29 @@ def calculateTotals(transactions):
 5. All Pydantic models live in schemas.py — no inline model definitions in routes
 
 Core principle: Raw transactions → deterministic engine → structured summary → AI explains it. AI never touches numbers. The engine never guesses.
+
+## Auth — Clerk as Third-Party Auth Provider
+
+The frontend obtains an RS256-signed JWT from Clerk and sends it as
+`Authorization: Bearer <token>`. The backend verifies the signature
+against Clerk's JWKS (cached in-process) and enforces `iss`, `aud`, `exp`,
+`sub`. Supabase independently re-verifies the same token via its Clerk
+Third-Party Auth provider; RLS policies compare `auth.jwt() ->> 'sub'` to
+`user_id` (stored as `text`, not UUID).
+
+Rules:
+1. JWT verification lives only in `app/routes/deps.py` (`get_user_ctx`)
+   and `app/auth/jwks.py` (JWKS client factory). No other module decodes tokens.
+2. Services never see JWTs — they receive a `UserContext` with the
+   verified `user_id` and a per-request Supabase client.
+3. `algorithms=["RS256"]` only — never include HS256 (prevents algorithm-
+   downgrade attacks, since Supabase's shared secret would otherwise sign
+   a forgeable token).
+4. Required env var: `CLERK_ISSUER`. Optional: `CLERK_JWKS_URL` (derived
+   from the issuer when unset). Misconfiguration fails at app boot.
+
+See `docs/superpowers/specs/2026-04-23-clerk-rs256-jwks-migration-design.md`
+for the full rationale and execution playbook.
 
 ## Naming conventions
 

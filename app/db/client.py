@@ -18,7 +18,8 @@ from app.models.schemas import (
 class Settings(BaseSettings):
     supabase_url: str
     supabase_anon_key: str
-    supabase_jwt_secret: str
+    clerk_issuer: str
+    clerk_jwks_url: str | None = None        
     ai_model: str
 
     class Config:
@@ -32,12 +33,15 @@ def get_settings() -> Settings:
 
 
 def build_user_client(access_token: str) -> Client:
-    """Build a per-request Supabase client authenticated as the end user.
-
-    The anon key is the client's baseline (public, no RLS grants), and the
-    user's JWT is attached via postgrest.auth so every query runs under
-    auth.uid() and RLS enforces row-level access.
-    """
+    """Build a per-request Supabase client authenticated as the end user.                                                                                                                                                                                                                                      
+                                                         
+      The anon key admits the request to PostgREST (no grants on its own —
+      RLS is enabled on every user-owned table). The Clerk JWT is attached                                                                                                                                                                                                                                       
+      via postgrest.auth so Supabase's Third-Party Auth verifier populates                                                                                                                                                                                                                                       
+      auth.jwt(); RLS policies then enforce access by comparing                                                                                                                                                                                                                                                  
+      user_id = (auth.jwt() ->> 'sub') — stored as text, not UUID, because                                                                                                                                                                                                                                       
+      Clerk subs (e.g. user_33IZ...) aren't UUID-shaped.                                                                                                                                                                                                                                                         
+      """       
     s = get_settings()
     client = create_client(s.supabase_url, s.supabase_anon_key)
     client.postgrest.auth(access_token)

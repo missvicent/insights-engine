@@ -1,7 +1,9 @@
 # Supabase JWT Auth — Design
 
+> **Superseded 2026-04-23** — see [clerk-rs256-jwks-migration-design.md](./2026-04-23-clerk-rs256-jwks-migration-design.md). This document is kept as history; the current auth model is RS256/JWKS with Clerk, not HS256 with a shared Supabase secret.
+
 **Date:** 2026-04-16
-**Status:** Draft — pending user review before implementation plan
+**Status:** Superseded by `2026-04-23-clerk-rs256-jwks-migration-design.md`
 
 ## Problem
 

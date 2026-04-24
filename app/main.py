@@ -13,7 +13,11 @@ def _parse_origins(raw: str | None) -> list[str]:
     return [o.strip() for o in raw.split(",") if o.strip()]
 
 
-app = FastAPI(title="finance-insights-engine")
+app = FastAPI(
+    title="finance-insights-engine",
+    description="A financial insights engine that uses AI to analyze transactions and provide insights.",
+    version="0.1.0",
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_parse_origins(os.getenv("CORS_ORIGINS")),
