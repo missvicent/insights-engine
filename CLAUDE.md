@@ -5,7 +5,7 @@ FastAPI backend that computes financial insights from Supabase
 and generates AI recommendations via LiteLLM + Anthropic Claude.
 
 ## Stack
-- Python 3.12
+- Python 3.13
 - FastAPI + Uvicorn
 - Supabase (PostgreSQL) via supabase-py
 - [Clerk](https://clerk.com) as Supabase [Third-Party Auth provider](https://clerk.com/docs/integrations/databases/supabase) — RS256 JWTs verified via JWKS
