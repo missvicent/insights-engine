@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: insights-engine
+    runtime: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: AI_MODEL
+        value: anthropic/claude-haiku-4-5-20251001
+
+      # ── Secrets: declared here, values set in dashboard ──
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: CLERK_ISSUER
+        sync: false
+      - key: CLERK_JWKS_URL
+        sync: false
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: CLERK_WEBHOOK_SECRET
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM_ADDRESS
+        sync: false
+      - key: APP_NAME
+        sync: false
+      - key: CRON_SHARED_SECRET
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
