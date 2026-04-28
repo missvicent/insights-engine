@@ -6,6 +6,7 @@ venv/
 .env.local
 __pycache__/
 *.pyc
+.superpowers/
 
 
 #Ignore cursor AI rules
