@@ -1,12 +1,18 @@
+import logging
 import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routes import ai as ai_routes
+from app.routes import emails as emails_routes
 from app.routes import health as health_routes
 from app.routes import insights as insights_routes
-from app.routes import emails as emails_routes
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 def _parse_origins(raw: str | None) -> list[str]:
     if not raw:
