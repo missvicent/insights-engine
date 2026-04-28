@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routes import ai as ai_routes
 from app.routes import health as health_routes
 from app.routes import insights as insights_routes
-
+from app.routes import emails as emails_routes
 
 def _parse_origins(raw: str | None) -> list[str]:
     if not raw:
@@ -30,3 +30,4 @@ app.add_middleware(
 app.include_router(insights_routes.router)
 app.include_router(ai_routes.router)
 app.include_router(health_routes.router)
+app.include_router(emails_routes.router)

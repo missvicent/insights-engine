@@ -39,8 +39,8 @@ union type syntax (`str | None`) that older Python versions cannot
 parse.
 
 ```bash
-python3.13 -m venv venv
-source venv/bin/activate
+/opt/homebrew/bin/python3.13 -m venv .venv
+source .venv/bin/activate
 ```
 
 If `python3.13` is not found, install it first:
@@ -61,7 +61,7 @@ python --version   # → Python 3.13.x
 
 ### 3. Install dependencies
 
-```bash
+```bash                                                                                             
 pip install -r requirements.txt
 ```
 
@@ -91,10 +91,10 @@ First activate the virtual environment (this puts `uvicorn` and the
 project's pinned dependencies on your `PATH`):
 
 ```bash
-source venv/bin/activate
+source .venv/bin/activate
 ```
 
-Your shell prompt should now be prefixed with `(venv)`. Then start the
+Your shell prompt should now be prefixed with `(.venv)`. Then start the
 development server:
 
 ```bash
@@ -102,7 +102,7 @@ uvicorn app.main:app --reload --reload-dir app
 ```
 
 `--reload-dir app` scopes the file watcher to `app/`, so writes under
-`venv/`, `.pytest_cache/`, or `__pycache__/` don't trigger spurious
+`.venv/`, `.pytest_cache/`, or `__pycache__/` don't trigger spurious
 restarts. Override host or port with `--host` / `--port`.
 
 The API will be available at `http://localhost:8000`.
@@ -115,18 +115,45 @@ To stop, press `Ctrl+C`. To leave the venv afterwards, run `deactivate`.
 If you'd rather skip activation, invoke the venv's `uvicorn` directly:
 
 ```bash
-venv/bin/uvicorn app.main:app --reload --reload-dir app
+.venv/bin/uvicorn app.main:app --reload --reload-dir app
 ```
+
+### Running with Docker
+
+A `Dockerfile` is included for containerised runs. The image installs
+dependencies, copies the app, and starts `uvicorn` on `$PORT` (defaults
+to `8000`). Secrets are not baked in — pass your `.env` at runtime.
+
+Build the image:
+
+```bash
+docker build -t insights-engine .
+```
+
+Run it, mapping port 8000 and loading your local `.env`:
+
+```bash
+docker run --rm -p 8000:8000 --env-file .env insights-engine
+```
+
+The API will be available at `http://localhost:8000` (docs at `/docs`),
+same as the local dev server. To override the port, pass `-e PORT=9000`
+and adjust the `-p` mapping accordingly.
 
 ### Troubleshooting
 
+- **`ERROR: Could not find a version that satisfies the requirement fastapi==...`**
+  during `pip install` — your `pip3` is bound to macOS's system Python 3.9,
+  which is too old. Create the venv with Python 3.13 explicitly
+  (`/opt/homebrew/bin/python3.13 -m venv .venv`) and install from inside it
+  (`.venv/bin/pip install -r requirements.txt`).
 - **`zsh: command not found: uvicorn`** — the venv isn't activated.
-  Run `source venv/bin/activate` first, or use the
-  `venv/bin/uvicorn ...` form above.
+  Run `source .venv/bin/activate` first, or use the
+  `.venv/bin/uvicorn ...` form above.
 - **`TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'`**
   at startup — you're running uvicorn with macOS's bundled Python 3.9
   instead of the venv's 3.13. Activate the venv (or run
-  `venv/bin/uvicorn ...` explicitly) — the error comes from
+  `.venv/bin/uvicorn ...` explicitly) — the error comes from
   `str | None` syntax that requires Python 3.10+.
 
 ## Auth
