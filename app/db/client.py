@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     clerk_issuer: str
+    clerk_webhook_secret: str
+    resend_api_key: str
+    resend_from_email: str
     supabase_anon_key: str
     supabase_url: str
 
