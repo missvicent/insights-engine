@@ -14,6 +14,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 
+
 def _parse_origins(raw: str | None) -> list[str]:
     if not raw:
         return []
@@ -22,7 +23,10 @@ def _parse_origins(raw: str | None) -> list[str]:
 
 app = FastAPI(
     title="finance-insights-engine",
-    description="A financial insights engine that uses AI to analyze transactions and provide insights.",
+    description=(
+        "A financial insights engine that uses AI to analyze"
+        " transactions and provide insights."
+    ),
     version="0.1.0",
 )
 app.add_middleware(
