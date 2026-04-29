@@ -280,16 +280,8 @@ class TestDetectCategorySpikes:
         assert result == []
 
     def test_spike_carries_icon_and_color(self):
-        current = [
-            make_expense(
-                200.0, category_icon="cart", category_color="#ff0000"
-            )
-        ]
-        previous = [
-            make_expense(
-                100.0, category_icon="cart", category_color="#ff0000"
-            )
-        ]
+        current = [make_expense(200.0, category_icon="cart", category_color="#ff0000")]
+        previous = [make_expense(100.0, category_icon="cart", category_color="#ff0000")]
         result = detect_category_spikes(current, previous)
         assert result[0].type == "spike"
         assert result[0].icon == "cart"
@@ -428,9 +420,7 @@ class TestDetectBudgetOverspending:
                 category_color="#ff0000",
             )
         ]
-        result = detect_budget_overspending(
-            current, [make_allocation(amount=100.0)]
-        )
+        result = detect_budget_overspending(current, [make_allocation(amount=100.0)])
         assert result[0].type == "budget_exceeded"
         assert result[0].icon == "cart"
         assert result[0].color == "#ff0000"
@@ -684,7 +674,9 @@ class TestDetectEndOfPeriodConcentration:
             {"amount": 500.0, "date": date(2026, 4, 25)},  # in last quarter
         ]
         df = _expense_df(rows)
-        result = detect_end_of_period_concentration(df, date(2026, 4, 1), date(2026, 4, 30))
+        result = detect_end_of_period_concentration(
+            df, date(2026, 4, 1), date(2026, 4, 30)
+        )
         assert len(result) == 1
         assert result[0].type == "end_of_period_concentration"
         assert "%" in result[0].message
@@ -692,7 +684,10 @@ class TestDetectEndOfPeriodConcentration:
     def test_even_distribution_no_pattern(self):
         rows = [{"amount": 10.0, "date": date(2026, 4, d)} for d in range(1, 29)]
         df = _expense_df(rows)
-        assert detect_end_of_period_concentration(df, date(2026, 4, 1), date(2026, 4, 30)) == []
+        assert (
+            detect_end_of_period_concentration(df, date(2026, 4, 1), date(2026, 4, 30))
+            == []
+        )
 
     def test_exactly_40pct_no_pattern(self):
         # total=100, end_total=40 → ratio == 0.40, strict > fails
@@ -701,12 +696,18 @@ class TestDetectEndOfPeriodConcentration:
             {"amount": 40.0, "date": date(2026, 4, 25)},
         ]
         df = _expense_df(rows)
-        assert detect_end_of_period_concentration(df, date(2026, 4, 1), date(2026, 4, 30)) == []
+        assert (
+            detect_end_of_period_concentration(df, date(2026, 4, 1), date(2026, 4, 30))
+            == []
+        )
 
     def test_zero_period_length_returns_empty(self):
         # window_start == window_end → period_length == 0 → returns []
         df = _expense_df([{"amount": 10.0, "date": date(2026, 4, 1)}])
-        assert detect_end_of_period_concentration(df, date(2026, 4, 1), date(2026, 4, 1)) == []
+        assert (
+            detect_end_of_period_concentration(df, date(2026, 4, 1), date(2026, 4, 1))
+            == []
+        )
 
     def test_pct_formatting_no_syntax_error(self):
         # Regression: the old code had `:.1f * 100` which raised ValueError.
@@ -715,7 +716,9 @@ class TestDetectEndOfPeriodConcentration:
             {"amount": 500.0, "date": date(2026, 4, 25)},
         ]
         df = _expense_df(rows)
-        result = detect_end_of_period_concentration(df, date(2026, 4, 1), date(2026, 4, 30))
+        result = detect_end_of_period_concentration(
+            df, date(2026, 4, 1), date(2026, 4, 30)
+        )
         # Message includes a percent like "98.0%"
         assert result[0].message.endswith(
             "% of spending in the last quarter of the window"
@@ -726,7 +729,9 @@ class TestDetectEndOfPeriodConcentration:
         # If it weren't, this would raise a TypeError.
         rows = [{"amount": 500.0, "date": date(2026, 4, 25)}]
         df = _expense_df(rows)
-        result = detect_end_of_period_concentration(df, date(2026, 4, 1), date(2026, 4, 30))
+        result = detect_end_of_period_concentration(
+            df, date(2026, 4, 1), date(2026, 4, 30)
+        )
         assert len(result) == 1
 
     def test_short_budget_period(self):
@@ -736,7 +741,9 @@ class TestDetectEndOfPeriodConcentration:
             {"amount": 500.0, "date": date(2026, 4, 3)},
         ]
         df = _expense_df(rows)
-        result = detect_end_of_period_concentration(df, date(2026, 4, 1), date(2026, 4, 3))
+        result = detect_end_of_period_concentration(
+            df, date(2026, 4, 1), date(2026, 4, 3)
+        )
         # Only the Apr 3 row is >= Apr 3, so it hits 98%.
         assert len(result) == 1
 
@@ -837,7 +844,10 @@ class TestDetectPatterns:
         assert detect_patterns([], date(2026, 4, 1), date(2026, 4, 30)) == []
 
     def test_income_only_returns_empty(self):
-        assert detect_patterns([make_income(500.0)], date(2026, 4, 1), date(2026, 4, 30)) == []
+        assert (
+            detect_patterns([make_income(500.0)], date(2026, 4, 1), date(2026, 4, 30))
+            == []
+        )
 
     def test_aggregates_from_sub_detectors(self):
         # Build a dataset that triggers all three sub-detectors:
@@ -1040,9 +1050,7 @@ class TestComputeGoalProgress:
         from tests.conftest import make_goal
 
         past = date.today() - timedelta(days=10)
-        result = compute_goal_progress(
-            [make_goal(target_date=past, is_achieved=False)]
-        )
+        result = compute_goal_progress([make_goal(target_date=past, is_achieved=False)])
 
         assert len(result) == 1
         assert result[0].on_track is False

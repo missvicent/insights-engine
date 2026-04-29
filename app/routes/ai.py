@@ -20,7 +20,6 @@ from app.services.insights_engine import (
     resolve_window,
 )
 
-
 router = APIRouter()
 
 

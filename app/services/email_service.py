@@ -12,16 +12,18 @@ def send_welcome_email(to: str, first_name: str | None = None) -> bool:
     resend.api_key = settings.resend_api_key
     logger.info("Sending welcome email to %s (first_name=%s)", to, first_name)
     try:
-        response = resend.Emails.send({
-            "from": settings.resend_from_email,
-            "to": [to],
-            "template": {
-                "id": "welcome-personal-budget",
-                "variables": {
-                    "USER": first_name,
+        response = resend.Emails.send(
+            {
+                "from": settings.resend_from_email,
+                "to": [to],
+                "template": {
+                    "id": "welcome-personal-budget",
+                    "variables": {
+                        "USER": first_name,
+                    },
                 },
-            },
-        })
+            }
+        )
         logger.info("Resend accepted email to %s: %s", to, response)
         return True
     except Exception:

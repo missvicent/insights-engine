@@ -19,8 +19,8 @@ from app.models.schemas import (
     BudgetRow,
     CategoryBreakdown,
     FinancialTotals,
-    GoalRow,
     GoalProgress,
+    GoalRow,
     InsightSummary,
     InsightWindow,
     Pattern,
@@ -420,9 +420,7 @@ def detect_end_of_period_concentration(
     if period_length <= 0:
         return []
 
-    last_quarter = pd.Timestamp(
-        window_end - relativedelta(days=period_length // 4)
-    )
+    last_quarter = pd.Timestamp(window_end - relativedelta(days=period_length // 4))
 
     end_total = df[df["date"] >= last_quarter]["amount"].sum()
     total = df["amount"].sum()
@@ -485,9 +483,7 @@ def compute_goal_progress(goals: list[GoalRow]) -> list[GoalProgress]:
             continue
         progress_pct = 0.0
         if goal.target_amount > 0:
-            progress_pct = round(
-                (goal.current_amount / goal.target_amount) * 100, 2
-            )
+            progress_pct = round((goal.current_amount / goal.target_amount) * 100, 2)
         days_remaining: int | None = None
         on_track = True
         if goal.target_date is not None:
@@ -495,16 +491,19 @@ def compute_goal_progress(goals: list[GoalRow]) -> list[GoalProgress]:
             if days_remaining < 0:
                 on_track = False
 
-        result.append(GoalProgress(
-            goal_id=goal.id,
-            name=goal.name,
-            target_amount=goal.target_amount,
-            current_amount=goal.current_amount,
-            progress_pct=progress_pct,
-            days_remaining=days_remaining,
-            on_track=on_track,
-        ))
+        result.append(
+            GoalProgress(
+                goal_id=goal.id,
+                name=goal.name,
+                target_amount=goal.target_amount,
+                current_amount=goal.current_amount,
+                progress_pct=progress_pct,
+                days_remaining=days_remaining,
+                on_track=on_track,
+            )
+        )
     return result
+
 
 def build_summary(
     budget: BudgetRow,
