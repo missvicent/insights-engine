@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-29
 **Status:** Approved (brainstorming) — pending implementation
-**Owner:** vicentbnf@gmail.com
+**Owner:** <vicentbnf@gmail.com>
 
 ## Goal
 
@@ -42,7 +42,7 @@ become a single source of truth.
 
 ## Repos and their roles
 
-```
+```text
 insights-engine/                  ← BACKEND (owns schema)
 ├── supabase/
 │   ├── config.toml               ← supabase init; project_id linked
