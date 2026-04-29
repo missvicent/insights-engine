@@ -10,6 +10,12 @@ target-version = "py313"
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
 
+[tool.ruff.lint.isort]
+# Disambiguate the `supabase` PyPI package from our local supabase/ directory
+# (which holds migrations + config). Without this, ruff's first-party heuristic
+# misclassifies `from supabase import ...` as a local import.
+known-third-party = ["supabase"]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
