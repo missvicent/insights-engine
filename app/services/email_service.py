@@ -2,14 +2,18 @@ import logging
 
 import resend
 
-from app.db.client import get_settings
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 
 def send_welcome_email(to: str, first_name: str | None = None) -> bool:
+    """Send the welcome email via Resend.
+
+    `resend.api_key` is set once in the FastAPI lifespan (see app/main.py),
+    so this function only needs the `from` address from settings.
+    """
     settings = get_settings()
-    resend.api_key = settings.resend_api_key
     logger.info("Sending welcome email to %s (first_name=%s)", to, first_name)
     try:
         response = resend.Emails.send(

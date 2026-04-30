@@ -1,7 +1,7 @@
 from datetime import date
-from typing import Literal, Optional
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 AnomalyType = Literal[
     "spike",
@@ -27,31 +27,30 @@ InsightWindow = Literal["7d", "15d", "30d", "3m", "6m", "12m"]
 class TransactionRow(BaseModel):
     id: str
     user_id: str
-    budget_id: Optional[str] = None
-    account_id: Optional[str] = None
-    category_id: Optional[str] = None
+    budget_id: str | None = None
+    account_id: str | None = None
+    category_id: str | None = None
     amount: float
-    description: Optional[str] = None
+    description: str | None = None
     is_recurring: bool = False
-    merchant: Optional[str] = None
-    note: Optional[str] = None
-    notes: Optional[str] = None
-    tags: Optional[list[str]] = None
+    merchant: str | None = None
+    notes: str | None = None
+    tags: list[str] | None = None
     transaction_date: date
     type: str  # 'income' | 'expense'
 
     # joined fields
-    category_name: Optional[str] = None
-    category_icon: Optional[str] = None
-    category_color: Optional[str] = None
+    category_name: str | None = None
+    category_icon: str | None = None
+    category_color: str | None = None
 
 
 class CategoryRow(BaseModel):
     id: str
     name: str
     category_type: str  # 'income' | 'expense'
-    icon: Optional[str] = None
-    color: Optional[str] = None
+    icon: str | None = None
+    color: str | None = None
 
 
 class BudgetRow(BaseModel):
@@ -71,7 +70,7 @@ class AllocationRow(BaseModel):
     category_id: str
     amount: float
     alert_threshold: int = 80
-    category_name: Optional[str] = None
+    category_name: str | None = None
 
 
 class GoalRow(BaseModel):
@@ -79,7 +78,7 @@ class GoalRow(BaseModel):
     name: str
     target_amount: float
     current_amount: float = 0
-    target_date: Optional[date] = None
+    target_date: date | None = None
     is_achieved: bool = False
 
 
@@ -111,38 +110,46 @@ class FinancialTotals(BaseModel):
     total_income: float
     total_expenses: float
     net: float
-    savings_rate: Optional[float] = None
+    savings_rate: float | None = None
+
+
+class PeriodComparison(BaseModel):
+    """Output of `compare_periods`. None when there's no prior-period
+    baseline to compare against (i.e. previous total was 0)."""
+
+    income_change_pct: float | None = None
+    expenses_change_pct: float | None = None
 
 
 class CategoryBreakdown(BaseModel):
     category_id: str
-    category_name: Optional[str] = None
-    icon: Optional[str] = None
-    color: Optional[str] = None
+    category_name: str | None = None
+    icon: str | None = None
+    color: str | None = None
     total: float
     transaction_count: int
     pct_of_total: float
-    budget_limit: Optional[float] = None
-    budget_used_pct: Optional[float] = None  # 0-100, None if no budget set
+    budget_limit: float | None = None
+    budget_used_pct: float | None = None  # 0-100, None if no budget set
 
 
 class Anomaly(BaseModel):
     id: str
     type: AnomalyType
-    category_name: Optional[str] = None
-    icon: Optional[str] = None
-    color: Optional[str] = None
+    category_name: str | None = None
+    icon: str | None = None
+    color: str | None = None
     message: str
     severity: Literal["low", "medium", "high"]
-    amount: Optional[float] = None
+    amount: float | None = None
 
 
 class Pattern(BaseModel):
     id: str
     type: PatternType
-    category_name: Optional[str] = None
-    message: Optional[str] = None
-    data: Optional[dict] = None
+    category_name: str | None = None
+    message: str | None = None
+    data: dict[str, Any] | None = None
 
 
 class GoalProgress(BaseModel):
@@ -151,7 +158,7 @@ class GoalProgress(BaseModel):
     target_amount: float
     current_amount: float = 0
     progress_pct: float = 0
-    days_remaining: Optional[int] = None
+    days_remaining: int | None = None
     on_track: bool
 
 
@@ -175,17 +182,17 @@ class InsightSummary(BaseModel):
     total_income: float
     total_expenses: float
     net: float  # income - expenses
-    savings_rate: Optional[float] = None  # net/income * 100, or 0 if no income
+    savings_rate: float | None = None  # net/income * 100, or 0 if no income
 
     # vs last period
-    expenses_change_pct: Optional[float] = None  # None if no previous period data
-    income_change_pct: Optional[float] = None
+    expenses_change_pct: float | None = None  # None if no previous period data
+    income_change_pct: float | None = None
 
     category_breakdown: list[CategoryBreakdown]
     anomalies: list[Anomaly]
     patterns: list[Pattern]
     goals: list[GoalProgress]
-    debt: Optional[DebtSummary] = None
+    debt: DebtSummary | None = None
 
     # raw counts for context
     transaction_count: int
@@ -203,10 +210,14 @@ class InsightsResponse(BaseModel):
 
 
 class AIRecommendation(BaseModel):
-    insights: str
-    problems: str
-    recommendations: str
-    one_action: str  # the single most impactful thing to do
+    """A non-empty string in every field is part of the contract: empty
+    output from the model is treated as a validation failure so the route
+    falls back rather than serving a blank recommendation."""
+
+    insights: str = Field(min_length=1)
+    problems: str = Field(min_length=1)
+    recommendations: str = Field(min_length=1)
+    one_action: str = Field(min_length=1)
 
 
 class AIInsightsResponse(BaseModel):

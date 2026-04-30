@@ -7,11 +7,9 @@ Output: InsightSummary
 """
 
 from datetime import date, timedelta
-from typing import Optional
 
 import numpy as np
 import pandas as pd
-from dateutil.relativedelta import relativedelta
 
 from app.models.schemas import (
     AllocationRow,
@@ -24,6 +22,7 @@ from app.models.schemas import (
     InsightSummary,
     InsightWindow,
     Pattern,
+    PeriodComparison,
     TransactionRow,
 )
 
@@ -153,8 +152,12 @@ def category_breakdown(
 def compare_periods(
     current: list[TransactionRow],
     previous: list[TransactionRow],
-) -> dict:
-    """Positive = more spent/earned, negative = less spent/earned."""
+) -> PeriodComparison:
+    """Positive = more spent/earned, negative = less spent/earned.
+
+    Each pct is `None` when the previous-period baseline is 0 (would be a
+    div-by-zero); the AI layer treats `None` as "no comparison available".
+    """
 
     def totals(txs: list[TransactionRow]) -> tuple[float, float]:
         return (
@@ -170,10 +173,10 @@ def compare_periods(
             return None
         return round(((current - previous) / previous) * 100, 2)
 
-    return {
-        "income_change_pct": pct_change(current_income, previous_income),
-        "expenses_change_pct": pct_change(current_expenses, previous_expenses),
-    }
+    return PeriodComparison(
+        income_change_pct=pct_change(current_income, previous_income),
+        expenses_change_pct=pct_change(current_expenses, previous_expenses),
+    )
 
 
 def detect_anomalies(
@@ -201,7 +204,7 @@ def sum_expenses_by_category(txs: list[TransactionRow]) -> dict[str, float]:
 
 def _category_display_by_id(
     transactions: list[TransactionRow],
-) -> dict[str, tuple[Optional[str], Optional[str], Optional[str]]]:
+) -> dict[str, tuple[str | None, str | None, str | None]]:
     """Map category_id → (name, icon, color) over expense transactions."""
     return {
         t.category_id: (t.category_name, t.category_icon, t.category_color)
@@ -420,7 +423,7 @@ def detect_end_of_period_concentration(
     if period_length <= 0:
         return []
 
-    last_quarter = pd.Timestamp(window_end - relativedelta(days=period_length // 4))
+    last_quarter = pd.Timestamp(window_end - timedelta(days=period_length // 4))
 
     end_total = df[df["date"] >= last_quarter]["amount"].sum()
     total = df["amount"].sum()
@@ -475,8 +478,15 @@ def detect_frequent_categories(df: pd.DataFrame) -> list[Pattern]:
     return patterns
 
 
-def compute_goal_progress(goals: list[GoalRow]) -> list[GoalProgress]:
-    today = date.today()
+def compute_goal_progress(
+    goals: list[GoalRow],
+    today: date | None = None,
+) -> list[GoalProgress]:
+    """`today` is injectable so callers can pin progress to the analytics
+    window's "now" rather than wall-clock time — keeps the engine pure
+    and the tests deterministic."""
+    if today is None:
+        today = date.today()
     result: list[GoalProgress] = []
     for goal in goals:
         if goal.is_achieved:
@@ -530,8 +540,8 @@ def build_summary(
         total_expenses=totals.total_expenses,
         net=totals.net,
         savings_rate=totals.savings_rate,
-        income_change_pct=change["income_change_pct"],
-        expenses_change_pct=change["expenses_change_pct"],
+        income_change_pct=change.income_change_pct,
+        expenses_change_pct=change.expenses_change_pct,
         category_breakdown=breakdown,
         anomalies=anomalies,
         patterns=patterns,

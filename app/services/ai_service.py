@@ -18,6 +18,7 @@ Architecture rule:
 
 import json
 import logging
+import re
 from pathlib import Path
 
 import litellm
@@ -29,7 +30,7 @@ from litellm.exceptions import (
 )
 from pydantic import ValidationError
 
-from app.db.client import get_settings
+from app.config import get_settings
 from app.models.schemas import AIRecommendation, InsightSummary
 
 logger = logging.getLogger(__name__)
@@ -104,13 +105,17 @@ def build_ai_prompt(summary: InsightSummary) -> str:
     return json.dumps(payload, indent=2)
 
 
+_CODE_FENCE_RE = re.compile(r"\A```(?:json)?\s*|```\s*\Z", re.MULTILINE)
+
+
 def _strip_code_fences(raw: str) -> str:
-    """Defensive: strip ```json ... ``` fences if the model added them."""
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    return raw.strip()
+    """Defensive: strip ```json ... ``` fences if the model added them.
+
+    The leading fence may carry a `json` language hint; the trailing fence
+    may have surrounding whitespace. Anchored to start/end so embedded
+    triple-backticks inside a string field aren't accidentally clipped.
+    """
+    return _CODE_FENCE_RE.sub("", raw).strip()
 
 
 async def generate_ai_insights(summary: InsightSummary) -> AIRecommendation:

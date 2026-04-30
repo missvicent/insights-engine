@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from svix.webhooks import Webhook, WebhookVerificationError
 
-from app.db.client import Settings, get_settings
+from app.config import Settings, get_settings
 from app.services.email_service import send_welcome_email
 
 router = APIRouter()
@@ -30,8 +30,8 @@ async def welcome_webhook(
     try:
         wh = Webhook(settings.clerk_webhook_secret)
         wh.verify(payload, headers)
-    except WebhookVerificationError:
-        raise HTTPException(status_code=400, detail="Invalid signature")
+    except WebhookVerificationError as err:
+        raise HTTPException(status_code=400, detail="Invalid signature") from err
 
     event = json.loads(payload)
     event_type = event.get("type")

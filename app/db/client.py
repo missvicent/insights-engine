@@ -1,9 +1,8 @@
 from datetime import date
-from functools import lru_cache
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from supabase import Client, create_client
 
+from app.config import get_settings
 from app.context import UserContext
 from app.models.schemas import (
     AllocationRow,
@@ -14,24 +13,10 @@ from app.models.schemas import (
     TransactionRow,
 )
 
-
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
-    clerk_issuer: str
-    clerk_webhook_secret: str
-    resend_api_key: str
-    resend_from_email: str
-    supabase_anon_key: str
-    supabase_url: str
-
-    ai_model: str = "anthropic/claude-haiku-4-5-20251001"
-    clerk_jwks_url: str | None = None
-
-
-@lru_cache
-def get_settings() -> Settings:
-    return Settings()
+# PostgREST defaults to a 1000-row ceiling silently; we set our own explicit
+# upper bound so a runaway window surfaces as truncation rather than as a
+# half-correct insight summary.
+TRANSACTIONS_FETCH_LIMIT = 10_000
 
 
 def build_user_client(access_token: str) -> Client:
@@ -67,6 +52,8 @@ def fetch_transactions(
         .eq("user_id", ctx.user_id)
         .gte("transaction_date", start.isoformat())
         .lte("transaction_date", end.isoformat())
+        .order("transaction_date")
+        .limit(TRANSACTIONS_FETCH_LIMIT)
     )
     if budget_id is not None:
         query = query.eq("budget_id", budget_id)

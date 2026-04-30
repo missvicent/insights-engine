@@ -157,39 +157,38 @@ class TestCategoryBreakdown:
 
 class TestComparePeriods:
     def test_both_empty(self):
-        assert compare_periods([], []) == {
-            "income_change_pct": None,
-            "expenses_change_pct": None,
-        }
+        result = compare_periods([], [])
+        assert result.income_change_pct is None
+        assert result.expenses_change_pct is None
 
     def test_both_increase(self):
         current = [make_income(1200.0), make_expense(600.0)]
         previous = [make_income(1000.0), make_expense(500.0)]
         result = compare_periods(current, previous)
-        assert result["income_change_pct"] == pytest.approx(20.0)
-        assert result["expenses_change_pct"] == pytest.approx(20.0)
+        assert result.income_change_pct == pytest.approx(20.0)
+        assert result.expenses_change_pct == pytest.approx(20.0)
 
     def test_both_decrease(self):
         current = [make_income(800.0), make_expense(400.0)]
         previous = [make_income(1000.0), make_expense(500.0)]
         result = compare_periods(current, previous)
-        assert result["income_change_pct"] == pytest.approx(-20.0)
-        assert result["expenses_change_pct"] == pytest.approx(-20.0)
+        assert result.income_change_pct == pytest.approx(-20.0)
+        assert result.expenses_change_pct == pytest.approx(-20.0)
 
     def test_previous_zero_returns_none(self):
         current = [make_expense(100.0)]
         result = compare_periods(current, [])
-        assert result["expenses_change_pct"] is None
+        assert result.expenses_change_pct is None
 
     def test_income_only_current(self):
         result = compare_periods([make_income(500.0)], [make_income(250.0)])
-        assert result["income_change_pct"] == pytest.approx(100.0)
-        assert result["expenses_change_pct"] is None
+        assert result.income_change_pct == pytest.approx(100.0)
+        assert result.expenses_change_pct is None
 
     def test_expense_only_current(self):
         result = compare_periods([make_expense(200.0)], [make_expense(100.0)])
-        assert result["income_change_pct"] is None
-        assert result["expenses_change_pct"] == pytest.approx(100.0)
+        assert result.income_change_pct is None
+        assert result.expenses_change_pct == pytest.approx(100.0)
 
 
 class TestSumExpensesByCategory:
