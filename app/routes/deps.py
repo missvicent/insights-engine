@@ -13,8 +13,9 @@ from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.auth.jwks import get_jwks_client
+from app.config import get_settings
 from app.context import UserContext
-from app.db.client import build_user_client, get_settings
+from app.db.client import build_user_client
 
 logger = logging.getLogger(__name__)
 

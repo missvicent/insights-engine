@@ -6,11 +6,21 @@ override only the fields they care about.
 
 from __future__ import annotations
 
+import os
+
+# Provide harmless defaults for required settings *before* any app module
+# is imported, so `app.main` can construct `Settings()` (e.g. for CORS) at
+# import time without each test having to monkeypatch the environment.
+os.environ.setdefault("CLERK_ISSUER", "https://test.clerk.test")
+os.environ.setdefault("SUPABASE_URL", "https://test.supabase.test")
+os.environ.setdefault("SUPABASE_ANON_KEY", "test-anon-key")
+os.environ.setdefault("CORS_ORIGINS", "")
+
 import time
 import uuid
 from collections.abc import Callable
 from datetime import date
-from typing import Any, Optional
+from typing import Any
 
 import jwt as pyjwt
 import pytest
@@ -31,14 +41,14 @@ def _uid(prefix: str) -> str:
 def make_expense(
     amount: float = 10.0,
     *,
-    category_id: Optional[str] = "cat-g",
-    category_name: Optional[str] = "Groceries",
-    category_icon: Optional[str] = None,
-    category_color: Optional[str] = None,
+    category_id: str | None = "cat-g",
+    category_name: str | None = "Groceries",
+    category_icon: str | None = None,
+    category_color: str | None = None,
     transaction_date: date = date(2026, 4, 1),
-    merchant: Optional[str] = None,
-    description: Optional[str] = None,
-    id: Optional[str] = None,
+    merchant: str | None = None,
+    description: str | None = None,
+    id: str | None = None,
     user_id: str = "user-1",
 ) -> TransactionRow:
     return TransactionRow(
@@ -60,7 +70,7 @@ def make_income(
     amount: float = 1000.0,
     *,
     transaction_date: date = date(2026, 4, 1),
-    id: Optional[str] = None,
+    id: str | None = None,
     user_id: str = "user-1",
 ) -> TransactionRow:
     return TransactionRow(
@@ -79,7 +89,7 @@ def make_allocation(
     category_id: str = "cat-g",
     amount: float = 100.0,
     budget_id: str = "budget-1",
-    id: Optional[str] = None,
+    id: str | None = None,
     alert_threshold: int = 80,
 ) -> AllocationRow:
     return AllocationRow(
@@ -96,7 +106,7 @@ def make_budget(
     start_date: date = date(2026, 4, 1),
     end_date: date = date(2026, 4, 30),
     amount: float = 5000.0,
-    id: Optional[str] = None,
+    id: str | None = None,
     user_id: str = "user-1",
 ) -> BudgetRow:
     return BudgetRow(
@@ -115,10 +125,10 @@ def make_goal(
     name: str = "Emergency fund",
     target_amount: float = 1000.0,
     current_amount: float = 250.0,
-    target_date: Optional[date] = None,
+    target_date: date | None = None,
     is_achieved: bool = False,
-    id: Optional[str] = None,
-) -> "GoalRow":
+    id: str | None = None,
+) -> GoalRow:
     from app.models.schemas import GoalRow
 
     return GoalRow(
@@ -176,19 +186,22 @@ class FakeQuery:
     def __init__(self, rows: list[dict]) -> None:
         self._rows = rows
 
-    def select(self, *_a: object, **_kw: object) -> "FakeQuery":
+    def select(self, *_a: object, **_kw: object) -> FakeQuery:
         return self
 
-    def eq(self, *_a: object, **_kw: object) -> "FakeQuery":
+    def eq(self, *_a: object, **_kw: object) -> FakeQuery:
         return self
 
-    def gte(self, *_a: object, **_kw: object) -> "FakeQuery":
+    def gte(self, *_a: object, **_kw: object) -> FakeQuery:
         return self
 
-    def lte(self, *_a: object, **_kw: object) -> "FakeQuery":
+    def lte(self, *_a: object, **_kw: object) -> FakeQuery:
         return self
 
-    def limit(self, *_a: object, **_kw: object) -> "FakeQuery":
+    def limit(self, *_a: object, **_kw: object) -> FakeQuery:
+        return self
+
+    def order(self, *_a: object, **_kw: object) -> FakeQuery:
         return self
 
     def execute(self) -> object:

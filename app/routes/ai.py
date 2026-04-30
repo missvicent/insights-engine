@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date
 from typing import Annotated
 
@@ -42,13 +43,13 @@ async def get_ai_insights(
     current_start, current_end, prev_start, prev_end = resolve_window(
         q.window, date.today()
     )
-    current = await run_in_threadpool(
-        fetch_transactions, ctx, current_start, current_end, q.budget_id
+    current, previous, goals = await asyncio.gather(
+        run_in_threadpool(
+            fetch_transactions, ctx, current_start, current_end, q.budget_id
+        ),
+        run_in_threadpool(fetch_transactions, ctx, prev_start, prev_end, q.budget_id),
+        run_in_threadpool(fetch_goals, ctx),
     )
-    previous = await run_in_threadpool(
-        fetch_transactions, ctx, prev_start, prev_end, q.budget_id
-    )
-    goals = await run_in_threadpool(fetch_goals, ctx)
 
     summary = build_summary(
         budget=budget,
