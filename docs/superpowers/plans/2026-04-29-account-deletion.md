@@ -76,13 +76,13 @@
 **Files:**
 - Create: `supabase/migrations/20260429000000_account_deletion.sql`
 
-- [ ] **Step 1.1.1: Create the directory**
+- [x] **Step 1.1.1: Create the directory**
 
 ```bash
 mkdir -p supabase/migrations
 ```
 
-- [ ] **Step 1.1.2: Write `account_deletion_requests` schema**
+- [x] **Step 1.1.2: Write `account_deletion_requests` schema**
 
 Create `supabase/migrations/20260429000000_account_deletion.sql` with:
 
@@ -133,7 +133,7 @@ create index if not exists idx_deletion_requests_user_status
     on public.account_deletion_requests (user_id, status);
 ```
 
-- [ ] **Step 1.1.3: Apply via dashboard, verify no errors**
+- [x] **Step 1.1.3: Apply via dashboard, verify no errors**
 
 In Supabase SQL Editor, run the file. Expected: `Success. No rows returned.`
 
@@ -143,7 +143,7 @@ select count(*) from public.account_deletion_requests;
 ```
 Expected: 0.
 
-- [ ] **Step 1.1.4: Commit**
+- [x] **Step 1.1.4: Commit**
 
 ```bash
 git add supabase/migrations/20260429000000_account_deletion.sql
@@ -160,7 +160,7 @@ follow-up commits inside the same migration file."
 **Files:**
 - Modify: `supabase/migrations/20260429000000_account_deletion.sql`
 
-- [ ] **Step 1.2.1: Append audit and idempotency tables**
+- [x] **Step 1.2.1: Append audit and idempotency tables**
 
 Append to the migration file:
 
@@ -192,7 +192,7 @@ create table if not exists public.webhook_events (
 );
 ```
 
-- [ ] **Step 1.2.2: Apply incremental SQL via dashboard**
+- [x] **Step 1.2.2: Apply incremental SQL via dashboard**
 
 Run the appended block only (do not re-run the whole file unless you trust IF NOT EXISTS — it does, but minimise blast radius).
 
@@ -203,7 +203,7 @@ select count(*) from public.webhook_events;
 ```
 Both 0.
 
-- [ ] **Step 1.2.3: Commit**
+- [x] **Step 1.2.3: Commit**
 
 ```bash
 git add supabase/migrations/20260429000000_account_deletion.sql
@@ -217,7 +217,7 @@ git commit -m "feat(db): account_deletion_audit + webhook_events tables"
 **Files:**
 - Modify: `supabase/migrations/20260429000000_account_deletion.sql`
 
-- [ ] **Step 1.3.1: Append RLS policies**
+- [x] **Step 1.3.1: Append RLS policies**
 
 ```sql
 -- ── RLS ─────────────────────────────────────────────────────────────────────
@@ -257,9 +257,9 @@ create policy "deletion_requests_cancel_own"
 -- authenticated/anon. Service role bypasses RLS by default.
 ```
 
-- [ ] **Step 1.3.2: Apply via dashboard**
+- [x] **Step 1.3.2: Apply via dashboard**
 
-- [ ] **Step 1.3.3: Smoke-test RLS denies anon access**
+- [x] **Step 1.3.3: Smoke-test RLS denies anon access**
 
 In dashboard SQL editor, switch role to `authenticated` (top-right role selector) and run:
 ```sql
@@ -272,7 +272,7 @@ select count(*) from public.account_deletion_requests;
 ```
 Expected: 0 rows (same — no rows exist that match).
 
-- [ ] **Step 1.3.4: Commit**
+- [x] **Step 1.3.4: Commit**
 
 ```bash
 git add supabase/migrations/20260429000000_account_deletion.sql
