@@ -46,8 +46,8 @@ deletions converge on the same destructive path.
 | `confirmation_token_hash` | `bytea` | sha256 of url-safe token |
 | `confirmation_token_expires_at` | `timestamptz` | `created_at + 1h` |
 | `scheduled_deletion_at` | `timestamptz` | Set when status moves to `scheduled` |
-| `created_at` | `timestamptz default now()` | |
-| `confirmed_at` | `timestamptz` | |
+| `created_at` | `timestamptz default now()` | |**
+| `confirmed_at` | `timestamptz` | |**
 | `cancelled_at` | `timestamptz` | |
 | `clerk_called_at` | `timestamptz` | |
 | `completed_at` | `timestamptz` | |
@@ -264,8 +264,8 @@ no caching (cancel must take effect immediately).
 3. **Phase 3 — User-facing endpoints:** request, confirm, cancel, status,
    account-locked guard.
 4. **Phase 4 — Server-to-server endpoints:** webhook (folded with
-   user.created), internal cron, Clerk admin client, idempotency table.
-5. **Phase 5 — Clerk + Render config:** dashboard changes, env vars.
+**   user.created), internal cron, Clerk admin client, idempotency table.
+**5. **Phase 5 — Clerk + Render config:** dashboard changes, env vars.
 6. **Phase 6 — Testing:** SQL function test, idempotency test,
    failure-mode tests, ngrok runbook, dev fast-forward.
 7. **Phase 7 — Observability & rollout:** logging rules, alerting,
