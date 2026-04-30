@@ -288,7 +288,17 @@ git commit -m "feat(db): RLS policies for deletion requests + audit"
 
 > FK-correct order from the spec: transactions → debt_payments → allocations → budget_archive_reports → recurring_transactions → debts → goals → budgets → accounts → categories(non-system) → user_settings → profiles.
 
-- [ ] **Step 1.4.1: Append the function**
+> **Smoke testing on 2026-04-30 surfaced four schema deltas vs. the spec.** Final SQL below reflects the as-shipped function.
+>
+> 1. `allocations` has no `user_id` — scope via `budget_id IN (SELECT id FROM budgets WHERE user_id = ...)`.
+> 2. `profiles` joins on `clerk_user_id`, not `user_id`.
+> 3. `categories` deletion was dropped — system rows are shared and user-created rows are reusable on signup; deleting them was unnecessary breakage.
+> 4. `digest()` lives in the `extensions` schema; with `search_path = public, pg_temp` it must be qualified as `extensions.digest(...)`.
+> 5. The `revoke from public` line did **not** strip the explicit Supabase grants to `anon` and `authenticated`; revoke must include both roles or `SECURITY DEFINER` becomes a remote-execute primitive for any signed-in user. **Critical security fix.**
+>
+> See followup `2026-04-30-supabase-local-dev.md` — these were caught by smoke-testing in remote prod-like Supabase, not locally. The fix is to set up local Supabase.
+
+- [x] **Step 1.4.1: Append the function** _(landed as standalone migration `20260430055524_delete_user_data.sql` — see Task 1.4.4 for follow-up consolidation)_
 
 ```sql
 -- ── Destructive function. Single transaction, idempotent. ────────────────────
@@ -302,17 +312,19 @@ begin
     -- FK-respecting deletion order. DELETE on a non-existent user is a no-op.
     delete from public.transactions where user_id = p_clerk_user_id;
     delete from public.debt_payments where user_id = p_clerk_user_id;
-    delete from public.allocations where user_id = p_clerk_user_id;
+    -- allocations has no user_id; scope via budget_id.
+    delete from public.allocations
+        where budget_id in (
+            select id from public.budgets where user_id = p_clerk_user_id
+        );
     delete from public.budget_archive_reports where user_id = p_clerk_user_id;
     delete from public.recurring_transactions where user_id = p_clerk_user_id;
     delete from public.debts where user_id = p_clerk_user_id;
     delete from public.goals where user_id = p_clerk_user_id;
     delete from public.budgets where user_id = p_clerk_user_id;
     delete from public.accounts where user_id = p_clerk_user_id;
-    delete from public.categories
-        where user_id = p_clerk_user_id and is_system = false;
     delete from public.user_settings where user_id = p_clerk_user_id;
-    delete from public.profiles where user_id = p_clerk_user_id;
+    delete from public.profiles where clerk_user_id = p_clerk_user_id;
 
     update public.account_deletion_requests
         set status = 'completed',
@@ -322,34 +334,34 @@ begin
 
     insert into public.account_deletion_audit (user_id_hash, event, metadata)
     values (
-        digest(p_clerk_user_id, 'sha256'),
+        extensions.digest(p_clerk_user_id, 'sha256'),
         'user_data_deleted',
         jsonb_build_object('called_at', now())
     );
 end;
 $$;
 
-revoke all on function public.delete_user_data(text) from public;
+revoke all on function public.delete_user_data(text) from public, anon, authenticated;
 grant execute on function public.delete_user_data(text) to service_role;
 ```
 
-- [ ] **Step 1.4.2: Apply via dashboard**
+- [x] **Step 1.4.2: Apply via dashboard** _(applied via `supabase db push`; CLI is in fact set up for this project — plan's line 72 caveat is stale.)_
 
-- [ ] **Step 1.4.3: Smoke test on a fake user**
+- [x] **Step 1.4.3: Smoke test on a fake user**
 
 ```sql
 select public.delete_user_data('user_test_does_not_exist');
 select count(*) from public.account_deletion_audit
 where event = 'user_data_deleted';
 ```
-Expected: function returns successfully, audit row inserted (count >= 1).
+Expected: function returns successfully, audit row inserted (count >= 1). **Verified 2026-04-30, count = 2 after iterative fixes.**
 
 Clean up the test audit row:
 ```sql
 delete from public.account_deletion_audit where event = 'user_data_deleted';
 ```
 
-- [ ] **Step 1.4.4: Commit**
+- [ ] **Step 1.4.4: Commit** _(pending — and pending decision on whether to squash the 4 fix migrations into one before commit; see followup `2026-04-30-supabase-local-dev.md`)_
 
 ```bash
 git add supabase/migrations/20260429000000_account_deletion.sql
