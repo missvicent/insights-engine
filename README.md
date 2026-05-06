@@ -17,7 +17,7 @@ to explain them in plain language.
 
 ## Prerequisites
 
-- Python 3.12+
+- Python 3.13+
 - A Supabase project (free tier works)
 - An API key from at least one AI provider (Anthropic, OpenAI, Google, or Groq)
 
@@ -33,16 +33,35 @@ cd personal-budget-api
 ### 2. Create a virtual environment
 
 A virtual environment keeps this project's packages
-separate from your system Python.
+separate from your system Python. **Use Python 3.13 explicitly** —
+macOS ships Python 3.9 as `python3`, and this project uses modern
+union type syntax (`str | None`) that older Python versions cannot
+parse.
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
+/opt/homebrew/bin/python3.13 -m venv .venv
+source .venv/bin/activate
+```
+
+If `python3.13` is not found, install it first:
+
+```bash
+# macOS
+brew install python@3.13
+
+# or with pyenv (reads .python-version automatically)
+pyenv install 3.13
+```
+
+Verify the venv is on 3.13:
+
+```bash
+python --version   # → Python 3.13.x
 ```
 
 ### 3. Install dependencies
 
-```bash
+```bash                                                                                             
 pip install -r requirements.txt
 ```
 
@@ -68,22 +87,74 @@ Open `.env` and set:
 
 ## Running
 
-Start the development server:
+First activate the virtual environment (this puts `uvicorn` and the
+project's pinned dependencies on your `PATH`):
 
 ```bash
-./scripts/dev.sh
+source .venv/bin/activate
 ```
 
-This runs `uvicorn` with hot-reload scoped to `app/` so writes under
-`venv/`, `.codacy/`, `.pytest_cache/`, or `__pycache__/` don't trigger
-spurious restarts. Override host or port with env vars:
+Your shell prompt should now be prefixed with `(.venv)`. Then start the
+development server:
 
 ```bash
-HOST=0.0.0.0 PORT=8080 ./scripts/dev.sh
+uvicorn app.main:app --reload --reload-dir app
 ```
+
+`--reload-dir app` scopes the file watcher to `app/`, so writes under
+`.venv/`, `.pytest_cache/`, or `__pycache__/` don't trigger spurious
+restarts. Override host or port with `--host` / `--port`.
 
 The API will be available at `http://localhost:8000`.
 Browse the interactive API docs at `http://localhost:8000/docs`.
+
+To stop, press `Ctrl+C`. To leave the venv afterwards, run `deactivate`.
+
+### Running without activating
+
+If you'd rather skip activation, invoke the venv's `uvicorn` directly:
+
+```bash
+.venv/bin/uvicorn app.main:app --reload --reload-dir app
+```
+
+### Running with Docker
+
+A `Dockerfile` is included for containerised runs. The image installs
+dependencies, copies the app, and starts `uvicorn` on `$PORT` (defaults
+to `8000`). Secrets are not baked in — pass your `.env` at runtime.
+
+Build the image:
+
+```bash
+docker build -t insights-engine .
+```
+
+Run it, mapping port 8000 and loading your local `.env`:
+
+```bash
+docker run --rm -p 8000:8000 --env-file .env insights-engine
+```
+
+The API will be available at `http://localhost:8000` (docs at `/docs`),
+same as the local dev server. To override the port, pass `-e PORT=9000`
+and adjust the `-p` mapping accordingly.
+
+### Troubleshooting
+
+- **`ERROR: Could not find a version that satisfies the requirement fastapi==...`**
+  during `pip install` — your `pip3` is bound to macOS's system Python 3.9,
+  which is too old. Create the venv with Python 3.13 explicitly
+  (`/opt/homebrew/bin/python3.13 -m venv .venv`) and install from inside it
+  (`.venv/bin/pip install -r requirements.txt`).
+- **`zsh: command not found: uvicorn`** — the venv isn't activated.
+  Run `source .venv/bin/activate` first, or use the
+  `.venv/bin/uvicorn ...` form above.
+- **`TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'`**
+  at startup — you're running uvicorn with macOS's bundled Python 3.9
+  instead of the venv's 3.13. Activate the venv (or run
+  `.venv/bin/uvicorn ...` explicitly) — the error comes from
+  `str | None` syntax that requires Python 3.10+.
 
 ## Auth
 

@@ -1,0 +1,15 @@
+.venv
+venv
+__pycache__
+*.pyc
+
+.env
+.env.*
+!.env.example
+
+.git
+.github
+scripts/
+tests/
+*.md
+.DS_Store

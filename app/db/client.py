@@ -1,9 +1,8 @@
 from datetime import date
-from functools import lru_cache
 
-from pydantic_settings import BaseSettings
 from supabase import Client, create_client
 
+from app.config import get_settings
 from app.context import UserContext
 from app.models.schemas import (
     AllocationRow,
@@ -14,34 +13,22 @@ from app.models.schemas import (
     TransactionRow,
 )
 
-
-class Settings(BaseSettings):
-    supabase_url: str
-    supabase_anon_key: str
-    clerk_issuer: str
-    clerk_jwks_url: str | None = None        
-    ai_model: str
-
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
-
-
-@lru_cache
-def get_settings() -> Settings:
-    return Settings()
+# PostgREST defaults to a 1000-row ceiling silently; we set our own explicit
+# upper bound so a runaway window surfaces as truncation rather than as a
+# half-correct insight summary.
+TRANSACTIONS_FETCH_LIMIT = 10_000
 
 
 def build_user_client(access_token: str) -> Client:
-    """Build a per-request Supabase client authenticated as the end user.                                                                                                                                                                                                                                      
-                                                         
-      The anon key admits the request to PostgREST (no grants on its own —
-      RLS is enabled on every user-owned table). The Clerk JWT is attached                                                                                                                                                                                                                                       
-      via postgrest.auth so Supabase's Third-Party Auth verifier populates                                                                                                                                                                                                                                       
-      auth.jwt(); RLS policies then enforce access by comparing                                                                                                                                                                                                                                                  
-      user_id = (auth.jwt() ->> 'sub') — stored as text, not UUID, because                                                                                                                                                                                                                                       
-      Clerk subs (e.g. user_33IZ...) aren't UUID-shaped.                                                                                                                                                                                                                                                         
-      """       
+    """Build a per-request Supabase client authenticated as the end user.
+
+    The anon key admits the request to PostgREST (no grants on its own —
+    RLS is enabled on every user-owned table). The Clerk JWT is attached
+    via postgrest.auth so Supabase's Third-Party Auth verifier populates
+    auth.jwt(); RLS policies then enforce access by comparing
+    user_id = (auth.jwt() ->> 'sub') — stored as text, not UUID, because
+    Clerk subs (e.g. user_33IZ...) aren't UUID-shaped.
+    """
     s = get_settings()
     client = create_client(s.supabase_url, s.supabase_anon_key)
     client.postgrest.auth(access_token)
@@ -65,6 +52,8 @@ def fetch_transactions(
         .eq("user_id", ctx.user_id)
         .gte("transaction_date", start.isoformat())
         .lte("transaction_date", end.isoformat())
+        .order("transaction_date")
+        .limit(TRANSACTIONS_FETCH_LIMIT)
     )
     if budget_id is not None:
         query = query.eq("budget_id", budget_id)

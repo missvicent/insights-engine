@@ -18,6 +18,7 @@ Architecture rule:
 
 import json
 import logging
+import re
 from pathlib import Path
 
 import litellm
@@ -29,15 +30,14 @@ from litellm.exceptions import (
 )
 from pydantic import ValidationError
 
-from app.db.client import get_settings
+from app.config import get_settings
 from app.models.schemas import AIRecommendation, InsightSummary
-
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = (
-    Path(__file__).parent / "prompts" / "insights_system.md"
-).read_text(encoding="utf-8")
+SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "insights_system.md").read_text(
+    encoding="utf-8"
+)
 
 
 AI_FALLBACK = AIRecommendation(
@@ -105,13 +105,17 @@ def build_ai_prompt(summary: InsightSummary) -> str:
     return json.dumps(payload, indent=2)
 
 
+_CODE_FENCE_RE = re.compile(r"\A```(?:json)?\s*|```\s*\Z", re.MULTILINE)
+
+
 def _strip_code_fences(raw: str) -> str:
-    """Defensive: strip ```json ... ``` fences if the model added them."""
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    return raw.strip()
+    """Defensive: strip ```json ... ``` fences if the model added them.
+
+    The leading fence may carry a `json` language hint; the trailing fence
+    may have surrounding whitespace. Anchored to start/end so embedded
+    triple-backticks inside a string field aren't accidentally clipped.
+    """
+    return _CODE_FENCE_RE.sub("", raw).strip()
 
 
 async def generate_ai_insights(summary: InsightSummary) -> AIRecommendation:
@@ -138,24 +142,31 @@ async def generate_ai_insights(summary: InsightSummary) -> AIRecommendation:
     except (RateLimitError, ServiceUnavailableError, Timeout, APIError) as e:
         logger.warning(
             "AI provider error (model=%s, budget=%s): %s",
-            settings.ai_model, summary.budget_id, e,
+            settings.ai_model,
+            summary.budget_id,
+            e,
         )
         return AI_FALLBACK
     except json.JSONDecodeError:
         logger.error(
             "AI returned non-JSON (model=%s, budget=%s): %r",
-            settings.ai_model, summary.budget_id, raw,
+            settings.ai_model,
+            summary.budget_id,
+            raw,
         )
         return AI_FALLBACK
     except ValidationError as e:
         logger.warning(
             "AI response missing/invalid fields (model=%s, budget=%s): %s",
-            settings.ai_model, summary.budget_id, e,
+            settings.ai_model,
+            summary.budget_id,
+            e,
         )
         return AI_FALLBACK
     except Exception as e:
         logger.exception(
             "Unexpected failure in generate_ai_insights (budget=%s): %s",
-            summary.budget_id, e,
+            summary.budget_id,
+            e,
         )
         return AI_FALLBACK
