@@ -62,7 +62,7 @@ services:
   # Thin nginx gateway: proxies /rest/v1/* → PostgREST (port 3000).
   # Mirrors the Kong layout that supabase-py expects when it appends /rest/v1.
   gateway:
-    image: nginx:alpine
+    image: nginx:1.29.8-alpine
     depends_on:
       postgrest:
         condition: service_healthy
@@ -74,7 +74,6 @@ services:
           listen 8080;
           location /rest/v1/ {
             proxy_pass http://postgrest:3000/;
-            proxy_set_header apikey $$http_apikey;
             proxy_pass_request_headers on;
           }
         }
@@ -92,8 +91,6 @@ services:
       gateway:
         condition: service_healthy
     env_file: .env.ci
-    environment:
-      SUPABASE_URL: http://gateway:8080
     ports:
       - "8000:8000"
     healthcheck:
