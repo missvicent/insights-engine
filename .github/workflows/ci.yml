@@ -33,6 +33,28 @@ jobs:
       - name: Pytest
         run: pytest --deselect tests/test_deps.py -q
 
+  docker-compose-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bring up the stack
+        run: docker compose -f docker-compose.ci.yml up -d --wait --build
+
+      - name: Smoke /health
+        run: curl -fsS http://localhost:8000/health
+
+      - name: Smoke /health/db
+        run: curl -fsS http://localhost:8000/health/db
+
+      - name: Dump logs (always)
+        if: always()
+        run: docker compose -f docker-compose.ci.yml logs --no-color
+
+      - name: Tear down (always)
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v
+
   apply-migrations:
     needs: lint-and-test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
