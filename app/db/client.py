@@ -35,6 +35,20 @@ def build_user_client(access_token: str) -> Client:
     return client
 
 
+def ping() -> bool:
+    """Anon-key reachability probe for PostgREST.
+
+    Issues a zero-row select against `categories` (a system-only table
+    with no per-user RLS dependency) to verify both the HTTP path to
+    PostgREST and that its schema cache has loaded. Raises on failure
+    so the caller can map the exception to a 503.
+    """
+    s = get_settings()
+    client = create_client(s.supabase_url, s.supabase_anon_key)
+    client.table("categories").select("id").limit(1).execute()
+    return True
+
+
 def fetch_transactions(
     ctx: UserContext,
     start: date,
