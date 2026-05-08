@@ -1,6 +1,10 @@
 # CI stack: hermetic, no Supabase CLI dependency.
-# Brings up Postgres + PostgREST + the API; applies migrations via psql.
+# Brings up Postgres + PostgREST + nginx gateway + the API; applies migrations via psql.
 # Health smoke: curl /health and /health/db on localhost:8000.
+#
+# Architecture note: supabase-py always appends /rest/v1 to SUPABASE_URL (matching
+# the real Supabase Kong gateway layout). The `gateway` nginx service proxies
+# /rest/v1/* → PostgREST so the URL pattern works without a real Kong instance.
 
 services:
   postgres:
@@ -50,7 +54,34 @@ services:
       PGRST_DB_SCHEMAS: public
       PGRST_JWT_SECRET: ci-smoke-not-verified-by-anonymous-requests
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/3000 && echo -e \"GET / HTTP/1.0\\r\\n\\r\\n\" >&3 && cat <&3 | grep -q 200' || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  # Thin nginx gateway: proxies /rest/v1/* → PostgREST (port 3000).
+  # Mirrors the Kong layout that supabase-py expects when it appends /rest/v1.
+  gateway:
+    image: nginx:alpine
+    depends_on:
+      postgrest:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat > /etc/nginx/conf.d/default.conf << 'EOF'
+        server {
+          listen 8080;
+          location /rest/v1/ {
+            proxy_pass http://postgrest:3000/;
+            proxy_set_header apikey $$http_apikey;
+            proxy_pass_request_headers on;
+          }
+        }
+        EOF
+        nginx -g 'daemon off;'
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8080"]
       interval: 2s
       timeout: 3s
       retries: 20
@@ -58,11 +89,11 @@ services:
   api:
     build: .
     depends_on:
-      postgrest:
+      gateway:
         condition: service_healthy
     env_file: .env.ci
     environment:
-      SUPABASE_URL: http://postgrest:3000
+      SUPABASE_URL: http://gateway:8080
     ports:
       - "8000:8000"
     healthcheck:
