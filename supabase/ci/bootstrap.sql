@@ -20,12 +20,3 @@ CREATE OR REPLACE FUNCTION auth.jwt() RETURNS jsonb
 CREATE TABLE IF NOT EXISTS auth.users (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid()
 );
-
--- Stub: satisfies delete_user_data() -> extensions.digest().
--- In the real Supabase Postgres image, pgcrypto lives in the
--- extensions schema. Here we install pgcrypto into public and expose
--- a thin wrapper so the function body compiles without errors.
-CREATE SCHEMA IF NOT EXISTS extensions;
-CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
-CREATE OR REPLACE FUNCTION extensions.digest(data text, type text) RETURNS bytea
-  LANGUAGE sql IMMUTABLE STRICT AS $$ SELECT public.digest(data, type) $$;
