@@ -17,6 +17,10 @@ class Settings(BaseSettings):
 
     # ── Required ────────────────────────────────────────────────────────
     clerk_issuer: str
+    clerk_secret_key: str
+    account_deletion_enabled: bool = False
+    deletion_completed_template_id: str
+    supabase_service_role_key: str
     supabase_anon_key: str
     supabase_url: str
 

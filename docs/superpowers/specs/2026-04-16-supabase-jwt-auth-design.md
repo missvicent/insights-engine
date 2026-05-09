@@ -248,4 +248,4 @@ Unchanged. Engine functions never took `user_id` or `db`; the auth change does n
 
 - Any existing tests or local scripts that send `x-user-id` will break and must be updated to send a bearer token.
 - Include a small dev helper `scripts/dev_token.py` that mints a local HS256 token with `SUPABASE_JWT_SECRET` for manual `curl` testing. Minted tokens will not pass Supabase's server-side checks in production — they're strictly for the local backend.
-- The developer's `.env` needs `SUPABASE_JWT_SECRET` and `SUPABASE_ANON_KEY` added; `SUPABASE_SERVICE_KEY` can be removed.
+- The developer's `.env` needs `SUPABASE_JWT_SECRET` and `SUPABASE_ANON_KEY` added; `SUPABASE_SERVICE_ROLE_KEY` can be removed.

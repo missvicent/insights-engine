@@ -1,4 +1,4 @@
-# Account Deletion (Instant, Inline-Wipe) — Design
+****# Account Deletion (Instant, Inline-Wipe) — Design
 
 **Date:** 2026-05-06
 **Status:** Approved (brainstorming) — pending implementation
@@ -9,9 +9,13 @@
 
 Let a user delete their account from settings. The wipe happens inline:
 when the user clicks Delete (after a frontend "are you sure?" modal), the
-backend immediately erases all of the user's data across the 12 user-owned
+backend immediately erases all of the user's data across the 11 user-owned
 tables, deletes the Clerk user, and returns a success response. No grace
 period, no email confirmation, no cron.
+
+> `categories` is intentionally excluded: rows are system-seeded and the
+> product does not let users create custom categories. Nothing in
+> `categories` is user-owned.
 
 This is a deliberate simplification of the previously approved 30-day
 grace-period design. The old design's complexity (token flow, pg_cron,
@@ -95,20 +99,19 @@ Used by both `user.created` and `user.deleted` event handlers.
 
 `SECURITY DEFINER`, owned by `postgres`, `revoke execute from public`,
 `grant execute to service_role`. Single transaction (implicit in PL/pgSQL).
-FK-correct order (unchanged from original spec):
+FK-correct order:
 
 1. `transactions`
 2. `debt_payments`
-3. `allocations`
+3. `allocations` — scoped via `budget_id IN (SELECT id FROM budgets WHERE user_id = p_clerk_user_id)` because the table has no `user_id` column
 4. `budget_archive_reports`
 5. `recurring_transactions`
 6. `debts`
 7. `goals`
 8. `budgets`
 9. `accounts`
-10. `categories WHERE is_system = false`
-11. `user_settings`
-12. `profiles`
+10. `user_settings`
+11. `profiles` — keyed on `clerk_user_id`, not `user_id`
 
 Then insert audit row `('user_data_deleted', sha256(p_clerk_user_id))`.
 
@@ -195,10 +198,14 @@ app/
 app/routes/emails.py                DELETED after webhooks_clerk.py is live + tested
 
 supabase/migrations/
-└── 2026MMDDHHMMSS_account_deletion.sql   NEW — one migration, three things:
-                                                 - account_deletion_audit + RLS
-                                                 - webhook_events
-                                                 - delete_user_data() function
+└── 2026MMDDHHMMSS_account_deletion.sql   NEW — one migration:
+                                                 - rewrite delete_user_data() (drop legacy
+                                                   account_deletion_requests UPDATE; remove
+                                                   categories delete; key profiles by
+                                                   clerk_user_id)
+                                                 - DROP TABLE account_deletion_requests
+                                                 - (account_deletion_audit + RLS and
+                                                    webhook_events already exist from prior work)
 
 tests/
 ├── test_clerk_admin.py             NEW — retry behavior, 5xx → exp backoff, 4xx → no retry
@@ -233,7 +240,9 @@ tests/
 | `POST /webhooks/clerk` | Svix signature |
 
 `get_user_ctx` gains a profile-existence guard: after JWT verification,
-`SELECT 1 FROM profiles WHERE user_id = sub`. Missing → 401 Unauthorized.
+`SELECT 1 FROM profiles WHERE clerk_user_id = sub`. Missing → 401
+Unauthorized. (The column is `clerk_user_id`, not `user_id` — the
+`profiles` table predates this design.)
 
 This single check covers two concerns at once:
 
@@ -289,8 +298,12 @@ existed and was deleted," which is information we don't owe the caller.
 
 ### Phase 1 — Database foundation *(one migration, one PR)*
 
-- Migration `2026MMDDHHMMSS_account_deletion.sql` with `account_deletion_audit` + RLS, `webhook_events`, `delete_user_data()`.
-- SQL smoke test: seed a fake user across all 12 tables, call the function, verify everything is gone, run again, verify no-op.
+- `account_deletion_audit` (+ RLS) and `webhook_events` already exist from prior work — verify schema matches and `account_deletion_audit` has no `authenticated` policies.
+- Migration `2026MMDDHHMMSS_account_deletion.sql`:
+  - `CREATE OR REPLACE FUNCTION delete_user_data(p_clerk_user_id text)` with the corrected body (no `categories` delete; no legacy `account_deletion_requests` UPDATE; `profiles` keyed by `clerk_user_id`; `allocations` scoped via subquery).
+  - Verify wrapper is `SECURITY DEFINER`, owned by `postgres`, `REVOKE EXECUTE FROM public`, `GRANT EXECUTE TO service_role`.
+  - `DROP TABLE account_deletion_requests` (legacy from the 30-day-grace design).
+- SQL smoke test: seed a fake user across the 11 tables, call the function, verify everything is gone, run again, verify no-op.
 - *Blocks everything downstream.*
 
 ### Phase 2 — Pure modules
@@ -335,7 +348,7 @@ existed and was deleted," which is information we don't owe the caller.
 
 ## Test priorities (de-risk these first)
 
-1. `delete_user_data()` against a seeded test user — FK ordering, idempotency.
+1. `delete_user_data()` against a seeded test user — FK ordering, idempotency, no leftover rows in any of the 11 tables.
 2. `clerk_admin.py` retry behavior — 5xx exp backoff, 4xx no retry, 404 → success.
 3. `deletion_service.py` orchestration — order of operations, email-on-success-only, clerk-failure-after-wipe path.
 4. `webhooks_clerk.py` — Svix signature, idempotency via `webhook_events`, both event types dispatched correctly.
