@@ -403,7 +403,7 @@ app.include_router(archive_routes.router)
 Added to `Settings` in `app/db/client.py` and `.env.example`:
 
 - `CRON_SHARED_SECRET` — long random string. Also stored in Supabase Vault.
-- `SUPABASE_SERVICE_KEY` — Supabase service-role key. The existing
+- `SUPABASE_SERVICE_ROLE_KEY` — Supabase service-role key. The existing
   `SUPABASE_ANON_KEY` stays for user-facing requests.
 
 ## Error handling
@@ -484,7 +484,7 @@ prioritized; HTTP integration is light (the hard parts are pure functions).
 
 ## Documentation changes
 
-- `.env.example` — add `CRON_SHARED_SECRET` and `SUPABASE_SERVICE_KEY`
+- `.env.example` — add `CRON_SHARED_SECRET` and `SUPABASE_SERVICE_ROLE_KEY`
   placeholders.
 - `README.md` — short "Operations" section describing the cron, Vault
   setup, and recovery queries.

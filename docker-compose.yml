@@ -1,0 +1,21 @@
+# Local dev: runs only the API container.
+# Run `supabase start` separately to bring up the Supabase data plane;
+# the API reaches it on the host via host.docker.internal:54321.
+
+services:
+  api:
+    build: .
+    env_file: .env.docker
+    ports:
+      - "8000:8000"
+    extra_hosts:
+      # macOS: no-op (Docker Desktop maps host.docker.internal natively).
+      # Linux: required — `host-gateway` resolves to the host's gateway IP.
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Live-reload: mount the source so uvicorn --reload picks up edits.
+      - ./app:/app/app:ro
+    command:
+      - sh
+      - -c
+      - "uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"

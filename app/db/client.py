@@ -1,4 +1,6 @@
+import hashlib
 from datetime import date
+from typing import Any
 
 from supabase import Client, create_client
 
@@ -6,6 +8,7 @@ from app.config import get_settings
 from app.context import UserContext
 from app.models.schemas import (
     AllocationRow,
+    AuditEvent,
     BudgetRow,
     DebtRow,
     GoalRow,
@@ -33,6 +36,20 @@ def build_user_client(access_token: str) -> Client:
     client = create_client(s.supabase_url, s.supabase_anon_key)
     client.postgrest.auth(access_token)
     return client
+
+
+def ping() -> bool:
+    """Anon-key reachability probe for PostgREST.
+
+    Issues a zero-row select against `categories` (a system-only table
+    with no per-user RLS dependency) to verify both the HTTP path to
+    PostgREST and that its schema cache has loaded. Raises on failure
+    so the caller can map the exception to a 503.
+    """
+    s = get_settings()
+    client = create_client(s.supabase_url, s.supabase_anon_key)
+    client.table("categories").select("id").limit(1).execute()
+    return True
 
 
 def fetch_transactions(
@@ -148,3 +165,91 @@ def fetch_recurring(ctx: UserContext) -> list[RecurringRow]:
         .execute()
     )
     return [RecurringRow(**row) for row in response.data]
+
+
+def build_service_role_client() -> Client:
+    """Build a client authenticated as the service role.
+
+    RLS is disabled for this client. Use it ONLY in code paths where the
+    request itself authenticates via another mechanism (e.g. Svix-signed
+    webhooks) and we therefore have no JWT to attach.
+    """
+    s = get_settings()
+    return create_client(s.supabase_url, s.supabase_service_role_key)
+
+
+def fetch_profile_for_deletion(
+    client: Client, user_id: str
+) -> tuple[str, str | None] | None:
+    """Look up `(email, full_name)` for the deletion confirmation email.
+
+    Returns None when no profile exists for `user_id` — the deletion
+    service treats that as "nothing to email" and proceeds. The
+    `profiles` table stores `full_name`, not `first_name`; the email
+    layer passes whatever we return through the template's `USER` token.
+    """
+    response = (
+        client.table("profiles")
+        .select("email, full_name")
+        .eq("clerk_user_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    if not response.data:
+        return None
+    row = response.data[0]
+    return row["email"], row.get("full_name")
+
+
+def profile_exists(client: Client, user_id: str) -> bool:
+    """Check if the user's profile exists in the profiles table."""
+    response = (
+        client.table("profiles")
+        .select("clerk_user_id")
+        .eq("clerk_user_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    return bool(response.data)
+
+
+def insert_audit_event(
+    client: Client,
+    user_id: str,
+    event: AuditEvent,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    """Insert into account_deletion_audit. user_id is sha256'd before
+    storage so the table never holds raw Clerk subs. metadata MUST NOT
+    contain email, IP, name, or raw user_id (per spec)."""
+    client.table("account_deletion_audit").insert(
+        {
+            "user_id_hash": hashlib.sha256(user_id.encode()).hexdigest(),
+            "event": event.value,
+            "metadata": metadata,
+        }
+    ).execute()
+
+
+def record_webhook_event(client: Client, svix_id: str) -> bool:
+    """Record a webhook event for idempotency."""
+    try:
+        response = (
+            client.table("webhook_events")
+            .insert(
+                {
+                    "svix_id": svix_id,
+                }
+            )
+            .execute()
+        )
+        return bool(response.data)
+    except Exception as e:
+        if getattr(e, "code", None) == "23505" or "23505" in str(e):
+            return False
+        raise
+
+
+def call_delete_user_data(client: Client, user_id: str) -> None:
+    """Trigger the SQL deletion. Returns void; success = no exception."""
+    client.rpc("delete_user_data", {"p_clerk_user_id": user_id}).execute()

@@ -4,6 +4,7 @@ venv/
 .env.*.backup
 .env.bak
 .env.local
+.env.docker
 __pycache__/
 *.pyc
 .superpowers/

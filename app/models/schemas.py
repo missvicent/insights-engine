@@ -1,7 +1,15 @@
 from datetime import date
+from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+
+class AuditEvent(Enum):
+    REQUEST_INITIATED = "request_initiated"
+    USER_DATA_DELETED = "user_data_deleted"
+    CLERK_DELETE_FAILED = "clerk_delete_failed"
+
 
 AnomalyType = Literal[
     "spike",
