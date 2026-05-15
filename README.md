@@ -213,9 +213,47 @@ Clerk tokens live ~60 s — refresh via the same snippet if yours expires.
 
 ## Testing
 
+Tests use `pytest`, which lives in `requirements-dev.txt` (not the
+runtime `requirements.txt`). Install dev deps once into the venv:
+
 ```bash
+venv/bin/pip install -r requirements-dev.txt
+```
+
+Then run the suite. `pytest.ini` sets `testpaths = tests`, so no path
+is needed:
+
+```bash
+# Without activating the venv
+venv/bin/pytest
+
+# Or, with the venv activated (`source venv/bin/activate`)
 pytest
 ```
+
+### Running a subset
+
+```bash
+# A single file (useful when an unrelated file fails to collect —
+# e.g. tests/test_insights_route.py needs the full Settings env)
+venv/bin/pytest tests/test_clerk_admin.py
+
+# A single class
+venv/bin/pytest tests/test_clerk_admin.py::TestDeleteClerkUser
+
+# A single test
+venv/bin/pytest tests/test_clerk_admin.py::TestDeleteClerkUser::test_retry_on_5xx
+
+# Match by name substring
+venv/bin/pytest -k retry
+```
+
+### Useful flags
+
+- `-vv` — verbose output, full diffs on assertion failures
+- `-s` — don't capture stdout (lets `print()` through)
+- `-x` — stop at the first failure
+- `--lf` — re-run only the tests that failed last time
 
 ## Switching AI Providers
 

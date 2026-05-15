@@ -49,7 +49,8 @@ def delete_clerk_user(clerk_user_id: str) -> None:
             else:
                 # 4xx other than 404 — non-retryable
                 raise ClerkAPIError(
-                    f"Clerk DELETE returned {response.status_code}: {response.text[:200]}"
+                    f"Clerk DELETE returned {response.status_code}: "
+                    f"{response.text[:200]}"
                 )
         except httpx.HTTPError as e:
             last_error = repr(e)
