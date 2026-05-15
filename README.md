@@ -86,8 +86,11 @@ without these):
 - `CLERK_SECRET_KEY` — Clerk Backend API secret. Used by the account-
   deletion flow to call Clerk's admin API. Required at boot even when
   `ACCOUNT_DELETION_ENABLED=false`
-- `DELETION_COMPLETED_TEMPLATE_ID` — Resend template ID for the
-  account-deleted confirmation email
+- `RESEND_TEMPLATE_WELCOME` — Resend template ID/alias for the welcome
+  email (defaults to `welcome-personal-budget` in `.env.example`)
+- `RESEND_TEMPLATE_ACCOUNT_DELETED` — Resend template ID/alias for the
+  account-deleted confirmation email (defaults to
+  `delete-personal-budget-account` in `.env.example`)
 
 Optional:
 

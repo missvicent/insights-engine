@@ -19,16 +19,16 @@ Svix-verified `user.created` welcome flow in `routes/emails.py`.
 
 ## Phase 2 — Pure modules (TDD, no FastAPI surface)
 
-- [x] `app/config.py` — add `clerk_secret_key`, `supabase_service_role_key`, `account_deletion_enabled: bool = False`, `deletion_completed_template_id`.
+- [x] `app/config.py` — add `clerk_secret_key`, `supabase_service_role_key`, `account_deletion_enabled: bool = False`, `resend_template_account_deleted` (named for symmetry with the existing `resend_template_welcome`).
   - [X] `.env.example` already has a `SUPABASE_SERVICE_KEY` slot (line 23). Rename it to `SUPABASE_SERVICE_ROLE_KEY` so it matches the spec/plan, and update the comment on lines 20–22 (currently says "NOT currently read by the backend"). Mirror the rename in Render dashboard before flipping the flag.
 - [x] `app/models/schemas.py` — `AuditEvent` enum: `request_initiated | user_data_deleted | clerk_delete_failed`.
-- [ ] `app/services/clerk_admin.py` — `delete_clerk_user(user_id)` calling `DELETE /v1/users/{id}`. 3× exponential backoff on 5xx; 4xx no retry; **404 → success**. Tests: 5xx-then-200, 5xx×3 → raise, 4xx → raise, 404 → ok.
+- [x] `app/services/clerk_admin.py` — `delete_clerk_user(user_id)` calling `DELETE /v1/users/{id}`. 3× exponential backoff on 5xx; 4xx no retry; **404 → success**. Tests: 5xx-then-200, 5xx×3 → raise, 4xx → raise, 404 → ok.
   - **Why these four cases (don't re-ask later):**
     - `5xx-then-200` — Clerk had a transient blip; the retry loop recovers. Without this, a single API hiccup leaves the user half-deleted (DB wiped, Clerk auth still alive).
     - `5xx×3 → raise` — Clerk is genuinely down. After exhausting retries we must raise so `deletion_service` writes a `clerk_delete_failed` audit row and the route returns 502. The half-deleted state is real — surface it, never swallow.
     - `4xx → raise` (no retry) — bad request on our end (wrong secret, malformed call, expired admin token). Retrying just hammers Clerk and delays the error; fail fast so misconfiguration is obvious.
     - `404 → ok` — user already gone from Clerk (manual delete, prior webhook, drifted state). Treating this as success makes the operation idempotent: replays converge to the desired state instead of erroring.
-- [ ] `app/services/email_service.py` — add `send_account_deleted(email)` using the new template id; same logger + try/except shape as `send_welcome_email`.
+- [x] `app/services/email_service.py` — add `send_account_deleted(email)` using the new template id; same logger + try/except shape as `send_welcome_email`. *Implemented as `send_account_deleted_email(to, first_name=None)` for symmetry with `send_welcome_email`.*
 - [ ] `app/db/client.py` — add:
   - `build_service_role_client()` — mirrors `build_user_client` but uses `supabase_service_role_key`.
   - `fetch_profile_email(client, user_id)` — query `profiles.email WHERE clerk_user_id = ?`.

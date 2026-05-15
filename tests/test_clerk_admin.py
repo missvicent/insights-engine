@@ -11,9 +11,16 @@ class TestDeleteClerkUser:
     @pytest.fixture(autouse=True)
     def _env(self, monkeypatch):
         monkeypatch.setenv("CLERK_SECRET_KEY", "sk_test")
-        monkeypatch.setenv("DELETION_COMPLETED_TEMPLATE_ID", "tpl_x")
+        monkeypatch.setenv("RESEND_TEMPLATE_WELCOME", "tpl_welcome")
+        monkeypatch.setenv("RESEND_TEMPLATE_ACCOUNT_DELETED", "tpl_deleted")
         monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "srv_x")
         get_settings.cache_clear()  # if it's @lru_cache'd
+
+    @pytest.fixture(autouse=True)
+    def _no_sleep(self, monkeypatch):
+        # Skip the 1s + 2s exponential backoff so retry tests don't add
+        # ~3s of real wall time each.
+        monkeypatch.setattr("app.services.clerk_admin.time.sleep", lambda _: None)
 
     def test_retry_on_5xx(self):
         responses = [
