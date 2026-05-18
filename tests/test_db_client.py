@@ -49,9 +49,7 @@ class TestBuildServiceRoleClient:
             captured["key"] = key
             return sentinel
 
-        monkeypatch.setattr(
-            "app.db.client.create_client", fake_create_client
-        )
+        monkeypatch.setattr("app.db.client.create_client", fake_create_client)
 
         result = build_service_role_client()
 
@@ -65,21 +63,15 @@ class TestBuildServiceRoleClient:
 class TestFetchProfileForDeletion:
     def test_returns_email_and_full_name(self):
         client = MagicMock()
-        execute = (
-            client.table.return_value.select.return_value.eq.return_value
-            .limit.return_value.execute
-        )
-        execute.return_value.data = [
-            {"email": "u@x.com", "full_name": "Jane Doe"}
-        ]
+        limit = client.table.return_value.select.return_value.eq.return_value.limit
+        execute = limit.return_value.execute
+        execute.return_value.data = [{"email": "u@x.com", "full_name": "Jane Doe"}]
 
         result = fetch_profile_for_deletion(client, "user_abc")
 
         assert result == ("u@x.com", "Jane Doe")
         client.table.assert_called_once_with("profiles")
-        client.table.return_value.select.assert_called_once_with(
-            "email, full_name"
-        )
+        client.table.return_value.select.assert_called_once_with("email, full_name")
         client.table.return_value.select.return_value.eq.assert_called_once_with(
             "clerk_user_id", "user_abc"
         )
@@ -89,10 +81,8 @@ class TestFetchProfileForDeletion:
 
     def test_returns_email_and_none_when_full_name_missing(self):
         client = MagicMock()
-        execute = (
-            client.table.return_value.select.return_value.eq.return_value
-            .limit.return_value.execute
-        )
+        limit = client.table.return_value.select.return_value.eq.return_value.limit
+        execute = limit.return_value.execute
         execute.return_value.data = [{"email": "u@x.com"}]
 
         result = fetch_profile_for_deletion(client, "user_abc")
@@ -101,10 +91,8 @@ class TestFetchProfileForDeletion:
 
     def test_returns_none_when_profile_missing(self):
         client = MagicMock()
-        execute = (
-            client.table.return_value.select.return_value.eq.return_value
-            .limit.return_value.execute
-        )
+        limit = client.table.return_value.select.return_value.eq.return_value.limit
+        execute = limit.return_value.execute
         execute.return_value.data = []
 
         result = fetch_profile_for_deletion(client, "user_abc")
@@ -115,27 +103,21 @@ class TestFetchProfileForDeletion:
 class TestProfileExists:
     def test_true_when_row_present(self):
         client = MagicMock()
-        execute = (
-            client.table.return_value.select.return_value.eq.return_value
-            .limit.return_value.execute
-        )
+        limit = client.table.return_value.select.return_value.eq.return_value.limit
+        execute = limit.return_value.execute
         execute.return_value.data = [{"clerk_user_id": "user_abc"}]
 
         assert profile_exists(client, "user_abc") is True
         client.table.assert_called_once_with("profiles")
-        client.table.return_value.select.assert_called_once_with(
-            "clerk_user_id"
-        )
+        client.table.return_value.select.assert_called_once_with("clerk_user_id")
         client.table.return_value.select.return_value.eq.assert_called_once_with(
             "clerk_user_id", "user_abc"
         )
 
     def test_false_when_no_row(self):
         client = MagicMock()
-        execute = (
-            client.table.return_value.select.return_value.eq.return_value
-            .limit.return_value.execute
-        )
+        limit = client.table.return_value.select.return_value.eq.return_value.limit
+        execute = limit.return_value.execute
         execute.return_value.data = []
 
         assert profile_exists(client, "user_abc") is False
@@ -184,16 +166,12 @@ class TestInsertAuditEvent:
 class TestRecordWebhookEvent:
     def test_returns_true_on_insert(self):
         client = MagicMock()
-        execute = (
-            client.table.return_value.insert.return_value.execute
-        )
+        execute = client.table.return_value.insert.return_value.execute
         execute.return_value.data = [{"svix_id": "msg_1"}]
 
         assert record_webhook_event(client, "msg_1") is True
         client.table.assert_called_once_with("webhook_events")
-        client.table.return_value.insert.assert_called_once_with(
-            {"svix_id": "msg_1"}
-        )
+        client.table.return_value.insert.assert_called_once_with({"svix_id": "msg_1"})
 
     def test_returns_false_on_duplicate_via_code_attr(self):
         client = MagicMock()
