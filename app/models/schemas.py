@@ -1,6 +1,7 @@
 from datetime import date
-from typing import Any, Literal
 from enum import Enum
+from typing import Any, Literal
+
 from pydantic import BaseModel, Field
 
 

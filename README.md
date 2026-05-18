@@ -84,17 +84,34 @@ Copy the example file and fill in your keys.
 cp .env.example .env
 ```
 
-Open `.env` and set:
-- `SUPABASE_URL` — your project URL from Supabase dashboard
-- `SUPABASE_ANON_KEY` — your anon key (the per-request user JWT carries
-  the actual authorization; the anon key is just the baseline client)
+Open `.env` and set the **required** values (the app refuses to start
+without these):
+
+- `SUPABASE_URL` — your project URL from the Supabase dashboard
+- `SUPABASE_ANON_KEY` — anon key; the per-request user JWT carries
+  the actual authorization, so this is just the baseline client
+- `SUPABASE_SERVICE_ROLE_KEY` — service-role key for admin-tier ops
+  that bypass RLS (account deletion, profile guard). Keep secret;
+  never send to the frontend
 - `CLERK_ISSUER` — your Clerk instance URL (e.g.
-  `https://worthy-hornet-72.clerk.accounts.dev`). Required — app refuses
-  to start without it
-- `CLERK_JWKS_URL` — optional; defaults to
-  `{CLERK_ISSUER}/.well-known/jwks.json`
+  `https://worthy-hornet-72.clerk.accounts.dev`)
+- `CLERK_SECRET_KEY` — Clerk Backend API secret. Used by the account-
+  deletion flow to call Clerk's admin API. Required at boot even when
+  `ACCOUNT_DELETION_ENABLED=false`
+- `RESEND_TEMPLATE_WELCOME` — Resend template ID/alias for the welcome
+  email (defaults to `welcome-personal-budget` in `.env.example`)
+- `RESEND_TEMPLATE_ACCOUNT_DELETED` — Resend template ID/alias for the
+  account-deleted confirmation email (defaults to
+  `delete-personal-budget-account` in `.env.example`)
 - `AI_MODEL` — which model to use (default: `anthropic/claude-haiku-4-5-20251001`)
-- Your provider's API key (e.g. `ANTHROPIC_API_KEY`)
+- Your AI provider's API key (e.g. `ANTHROPIC_API_KEY`)
+
+Optional:
+
+- `CLERK_JWKS_URL` — defaults to `{CLERK_ISSUER}/.well-known/jwks.json`
+- `ACCOUNT_DELETION_ENABLED` — feature flag for `/me/delete` (default `false`)
+- `CLERK_WEBHOOK_SECRET`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL` — only
+  needed when the Clerk welcome webhook is wired
 
 ## Running
 
@@ -218,9 +235,47 @@ Clerk tokens live ~60 s — refresh via the same snippet if yours expires.
 
 ## Testing
 
+Tests use `pytest`, which lives in `requirements-dev.txt` (not the
+runtime `requirements.txt`). Install dev deps once into the venv:
+
 ```bash
+venv/bin/pip install -r requirements-dev.txt
+```
+
+Then run the suite. `pytest.ini` sets `testpaths = tests`, so no path
+is needed:
+
+```bash
+# Without activating the venv
+venv/bin/pytest
+
+# Or, with the venv activated (`source venv/bin/activate`)
 pytest
 ```
+
+### Running a subset
+
+```bash
+# A single file (useful when an unrelated file fails to collect —
+# e.g. tests/test_insights_route.py needs the full Settings env)
+venv/bin/pytest tests/test_clerk_admin.py
+
+# A single class
+venv/bin/pytest tests/test_clerk_admin.py::TestDeleteClerkUser
+
+# A single test
+venv/bin/pytest tests/test_clerk_admin.py::TestDeleteClerkUser::test_retry_on_5xx
+
+# Match by name substring
+venv/bin/pytest -k retry
+```
+
+### Useful flags
+
+- `-vv` — verbose output, full diffs on assertion failures
+- `-s` — don't capture stdout (lets `print()` through)
+- `-x` — stop at the first failure
+- `--lf` — re-run only the tests that failed last time
 
 ## Switching AI Providers
 

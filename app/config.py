@@ -19,7 +19,8 @@ class Settings(BaseSettings):
     clerk_issuer: str
     clerk_secret_key: str
     account_deletion_enabled: bool = False
-    deletion_completed_template_id: str
+    resend_template_welcome: str
+    resend_template_account_deleted: str
     supabase_service_role_key: str
     supabase_anon_key: str
     supabase_url: str
