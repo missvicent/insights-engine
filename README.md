@@ -39,8 +39,8 @@ union type syntax (`str | None`) that older Python versions cannot
 parse.
 
 ```bash
-/opt/homebrew/bin/python3.13 -m venv venv
-source venv/bin/activate
+/opt/homebrew/bin/python3.13 -m venv .venv
+source .venv/bin/activate
 ```
 
 If `python3.13` is not found, install it first:
@@ -61,9 +61,20 @@ python --version   # → Python 3.13.x
 
 ### 3. Install dependencies
 
-```bash                                                                                             
+For runtime only:
+
+```bash
 pip install -r requirements.txt
 ```
+
+For development (adds `pytest` and `ruff`):
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+`requirements-dev.txt` includes everything in `requirements.txt`, so you
+don't need to install both.
 
 ### 4. Configure environment variables
 
@@ -73,30 +84,17 @@ Copy the example file and fill in your keys.
 cp .env.example .env
 ```
 
-Open `.env` and set the **required** values (the app refuses to start
-without these):
-
-- `SUPABASE_URL` — your project URL from the Supabase dashboard
+Open `.env` and set:
+- `SUPABASE_URL` — your project URL from Supabase dashboard
 - `SUPABASE_ANON_KEY` — your anon key (the per-request user JWT carries
   the actual authorization; the anon key is just the baseline client)
-- `SUPABASE_SERVICE_ROLE_KEY` — service-role key for admin-tier ops that
-  bypass RLS. Keep secret; never send to the frontend
 - `CLERK_ISSUER` — your Clerk instance URL (e.g.
-  `https://worthy-hornet-72.clerk.accounts.dev`)
-- `CLERK_SECRET_KEY` — Clerk Backend API secret. Used by the account-
-  deletion flow to call Clerk's admin API. Required at boot even when
-  `ACCOUNT_DELETION_ENABLED=false`
-- `DELETION_COMPLETED_TEMPLATE_ID` — Resend template ID for the
-  account-deleted confirmation email
-
-Optional:
-
-- `CLERK_JWKS_URL` — defaults to `{CLERK_ISSUER}/.well-known/jwks.json`
-- `ACCOUNT_DELETION_ENABLED` — feature flag for `/me/delete` (default `false`)
+  `https://worthy-hornet-72.clerk.accounts.dev`). Required — app refuses
+  to start without it
+- `CLERK_JWKS_URL` — optional; defaults to
+  `{CLERK_ISSUER}/.well-known/jwks.json`
 - `AI_MODEL` — which model to use (default: `anthropic/claude-haiku-4-5-20251001`)
-- Your AI provider's API key (e.g. `ANTHROPIC_API_KEY`)
-- `CLERK_WEBHOOK_SECRET`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL` — only
-  needed when the Clerk welcome webhook is wired
+- Your provider's API key (e.g. `ANTHROPIC_API_KEY`)
 
 ## Running
 
@@ -104,10 +102,10 @@ First activate the virtual environment (this puts `uvicorn` and the
 project's pinned dependencies on your `PATH`):
 
 ```bash
-source venv/bin/activate
+source .venv/bin/activate
 ```
 
-Your shell prompt should now be prefixed with `(venv)`. Then start the
+Your shell prompt should now be prefixed with `(.venv)`. Then start the
 development server:
 
 ```bash
@@ -115,7 +113,7 @@ uvicorn app.main:app --reload --reload-dir app
 ```
 
 `--reload-dir app` scopes the file watcher to `app/`, so writes under
-`venv/`, `.pytest_cache/`, or `__pycache__/` don't trigger spurious
+`.venv/`, `.pytest_cache/`, or `__pycache__/` don't trigger spurious
 restarts. Override host or port with `--host` / `--port`.
 
 The API will be available at `http://localhost:8000`.
@@ -128,7 +126,7 @@ To stop, press `Ctrl+C`. To leave the venv afterwards, run `deactivate`.
 If you'd rather skip activation, invoke the venv's `uvicorn` directly:
 
 ```bash
-venv/bin/uvicorn app.main:app --reload --reload-dir app
+.venv/bin/uvicorn app.main:app --reload --reload-dir app
 ```
 
 ### Running with Docker
@@ -158,16 +156,23 @@ and adjust the `-p` mapping accordingly.
 - **`ERROR: Could not find a version that satisfies the requirement fastapi==...`**
   during `pip install` — your `pip3` is bound to macOS's system Python 3.9,
   which is too old. Create the venv with Python 3.13 explicitly
-  (`/opt/homebrew/bin/python3.13 -m venv venv`) and install from inside it
-  (`venv/bin/pip install -r requirements.txt`).
+  (`/opt/homebrew/bin/python3.13 -m venv .venv`) and install from inside it
+  (`.venv/bin/pip install -r requirements.txt`).
 - **`zsh: command not found: uvicorn`** — the venv isn't activated.
-  Run `source venv/bin/activate` first, or use the
-  `venv/bin/uvicorn ...` form above.
+  Run `source .venv/bin/activate` first, or use the
+  `.venv/bin/uvicorn ...` form above.
 - **`TypeError: unsupported operand type(s) for |: 'type' and 'NoneType'`**
   at startup — you're running uvicorn with macOS's bundled Python 3.9
   instead of the venv's 3.13. Activate the venv (or run
-  `venv/bin/uvicorn ...` explicitly) — the error comes from
+  `.venv/bin/uvicorn ...` explicitly) — the error comes from
   `str | None` syntax that requires Python 3.10+.
+- **`pip install` succeeds but packages don't appear inside the venv** —
+  your `.venv/bin/activate` script may have a stale absolute path baked
+  in (e.g. if your home directory was renamed or the project was moved
+  after the venv was created). Activation silently fails through to the
+  system or conda Python. Verify with `which python` after activating —
+  it must point inside `.venv/bin/`. If not, recreate the venv from
+  scratch (`rm -rf .venv && /opt/homebrew/bin/python3.13 -m venv .venv`).
 
 ## Auth
 
@@ -179,7 +184,7 @@ JWKS endpoint (cached per process) and enforces `iss`, `aud`, `exp`, and
 Third-Party Auth (Clerk) provider, so RLS policies authorize each row by
 comparing `auth.jwt() ->> 'sub'` to `user_id`.
 
-```text
+```
 Client (Clerk SDK)
   │  Authorization: Bearer <clerk-rs256-jwt>
   ▼
