@@ -21,7 +21,7 @@ Svix-verified `user.created` welcome flow in `routes/emails.py`.
 
 - [x] `app/config.py` — add `clerk_secret_key`, `supabase_service_role_key`, `account_deletion_enabled: bool = False`, `resend_template_account_deleted` (named for symmetry with the existing `resend_template_welcome`).
   - [X] `.env.example` already has a `SUPABASE_SERVICE_KEY` slot (line 23). Rename it to `SUPABASE_SERVICE_ROLE_KEY` so it matches the spec/plan, and update the comment on lines 20–22 (currently says "NOT currently read by the backend"). Mirror the rename in Render dashboard before flipping the flag.
-- [x] `app/models/schemas.py` — `AuditEvent` enum: `request_initiated | user_data_deleted | clerk_delete_failed`.
+- [x] `app/models/schemas.py` — `AuditEvent` enum: `request_initiated | user_data_deleted | clerk_delete_failed`. *Note: `request_initiated` and `clerk_delete_failed` are written by `deletion_service` (Phase 3) via `insert_audit_event`; `user_data_deleted` is written by the SQL function `delete_user_data` itself, not by Python.*
 - [x] `app/services/clerk_admin.py` — `delete_clerk_user(user_id)` calling `DELETE /v1/users/{id}`. 3× exponential backoff on 5xx; 4xx no retry; **404 → success**. Tests: 5xx-then-200, 5xx×3 → raise, 4xx → raise, 404 → ok.
   - **Why these four cases (don't re-ask later):**
     - `5xx-then-200` — Clerk had a transient blip; the retry loop recovers. Without this, a single API hiccup leaves the user half-deleted (DB wiped, Clerk auth still alive).
@@ -36,19 +36,20 @@ Svix-verified `user.created` welcome flow in `routes/emails.py`.
   - `insert_audit_event(client, user_id, event: AuditEvent, metadata: dict[str, Any] | None = None) -> None` — writes to **`account_deletion_audit`**. `user_id` is hashed in Python with `hashlib.sha256(user_id.encode()).hexdigest()` and stored as `user_id_hash`; raw user_id is never persisted. `event.value` is inserted (column is `text`). `metadata` MUST NOT contain email, IP, name, or raw user_id (per spec).
   - `record_webhook_event(client, svix_id) -> bool` — `INSERT INTO webhook_events (svix_id) … ON CONFLICT DO NOTHING`. Returns `True` on insert, `False` on duplicate (caught via Postgres error code `23505`). Table is `svix_id` PK only — no `event_type` column.
   - `call_delete_user_data(client, user_id) -> None` — `client.rpc("delete_user_data", {"p_clerk_user_id": user_id}).execute()`. Function returns void; success = no exception. The SQL function writes its own `user_data_deleted` audit row, so the Python helper does not.
-- [ ] Unit tests for each new `db/client.py` helper with a fake supabase client.
+- [x] Unit tests for each new `db/client.py` helper with a fake supabase client.
 
 ## Phase 3 — Wiring
 
-- [ ] `app/services/deletion_service.py` — `delete_account(user_ctx, sr_client)`:
-  1. `email = fetch_profile_email(sr_client, user_id)`
-  2. `insert_audit_event(sr_client, user_id, "request_initiated")`
+- [x] `app/services/deletion_service.py` — `delete_account(user_ctx, sr_client)`:
+  1. `email, full_name = fetch_profile_for_deletion(sr_client, user_id)` *(renamed per Phase 2 note)*
+  2. `insert_audit_event(sr_client, user_id, AuditEvent.REQUEST_INITIATED)`
   3. `call_delete_user_data(sr_client, user_id)`
-  4. `delete_clerk_user(user_id)` — on final failure: `insert_audit_event(..., "clerk_delete_failed")` then raise `ClerkDeleteFailed`.
-  5. `send_account_deleted(email)` — best-effort; log on failure, do not raise.
-  No DB calls inside this module; receives `sr_client` from the route.
-- [ ] `app/routes/account_deletion.py` — `POST /account/delete` (Clerk JWT). 503 if `account_deletion_enabled` is False. Build service-role client, call `delete_account(...)`, return 204. Map `ClerkDeleteFailed` → 502.
-- [ ] `app/main.py` — `include_router(account_deletion_routes.router)`.
+  4. `delete_clerk_user(user_id)` — on `ClerkAPIError`: `insert_audit_event(..., CLERK_DELETE_FAILED, {"error": str(e)})` then raise `ClerkDeleteFailed`. ✅
+  5. `send_account_deleted_email(email, first_name=full_name)` — guarded by `if email:`. Best-effort: `email_service._send` already wraps Resend in `try/except Exception` and returns `False` on failure, so a Resend outage cannot fail the deletion.
+****  No DB calls inside this module; receives `sr_client` from the route. ✅
+  - [x] Service-layer unit tests in `tests/test_deletion_service.py`: happy path ✅, profile-not-found ✅, clerk-delete-failed ✅.
+- [x] `app/routes/account_deletion.py` — `POST /account/delete` (Clerk JWT). 503 if `account_deletion_enabled` is False. Build service-role client, call `delete_account(...)`, return 204. Map `ClerkDeleteFailed` → 502.
+- [x] `app/main.py` — `include_router(account_deletion.router)`. *(Imported as bare `account_deletion`, not `account_deletion_routes` — deviates from the existing `*_routes` convention on the other four routers; intentional.)*
 - [ ] `app/routes/deps.py` — after JWT verify, `profile_exists(...)` against a service-role client; missing → 401 with the same uniform "invalid token" detail. **Bring `tests/test_deps.py` forward to the current Clerk shape first** (it still tests the old `authorization=` arg + `supabase_jwt_secret`); then add the missing-profile case.
 - [ ] `app/routes/webhooks_clerk.py` — single `POST /webhooks/clerk`:
   - Svix verify (existing pattern in `emails.py`) → 401 on bad sig.
@@ -64,7 +65,7 @@ Svix-verified `user.created` welcome flow in `routes/emails.py`.
 - [ ] `render.yaml` — declare `CLERK_SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ACCOUNT_DELETION_ENABLED` (default false), `DELETION_COMPLETED_TEMPLATE_ID`.
 - [ ] Render dashboard — set the three secrets; keep `ACCOUNT_DELETION_ENABLED=false`.
 - [ ] Resend — author the deletion-confirmation template; copy template id into env.
-- [ ] Clerk dashboard — webhook URL → `/webhooks/clerk`; subscribe `user.created` + `user.deleted`; disable Clerk Account Portal "delete account".
+- [ ] Clerk dashboard — webhook URL → `/webhooks/clerk`; subscribe `user.created` + `user.deleted`; disable Clerk Account Portal "delete account".****
 - [ ] Clerk "Send test event" → both event types verified.
 - [ ] Manual end-to-end with a throwaway user (flag still off, hit route via temporary override): wipe → audit → Clerk delete → email → webhook backstop no-ops.
 - [ ] **Last:** flip `ACCOUNT_DELETION_ENABLED=true`.
