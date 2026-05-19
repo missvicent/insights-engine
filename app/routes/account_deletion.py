@@ -20,5 +20,7 @@ def delete_account_(user_ctx: Annotated[UserContext, Depends(get_user_ctx)]) -> 
     sr_client = build_service_role_client()
     try:
         delete_account_service(user_ctx, sr_client)
+        send_account_deleted_email(user_ctx.email, user_ctx.first_name)
+        return Response(status_code=204)
     except ClerkDeleteFailed as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
