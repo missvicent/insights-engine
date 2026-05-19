@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
+from app.routes import account_deletion
 from app.routes import ai as ai_routes
 from app.routes import emails as emails_routes
 from app.routes import health as health_routes
@@ -47,3 +48,4 @@ app.include_router(insights_routes.router)
 app.include_router(ai_routes.router)
 app.include_router(health_routes.router)
 app.include_router(emails_routes.router)
+app.include_router(account_deletion.router)

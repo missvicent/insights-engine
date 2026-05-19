@@ -1,3 +1,5 @@
+import logging
+
 from supabase.client import Client
 
 from app.context import UserContext
@@ -10,6 +12,8 @@ from app.models.schemas import AuditEvent
 from app.services.clerk_admin import ClerkAPIError, delete_clerk_user
 from app.services.email_service import send_account_deleted_email
 
+logger = logging.getLogger(__name__)
+
 
 class ClerkDeleteFailed(Exception):
     """Raised when the Clerk user deletion fails."""
@@ -18,6 +22,9 @@ class ClerkDeleteFailed(Exception):
 def delete_account(user_ctx: UserContext, sr_client: Client) -> None:
     user_id = user_ctx.user_id
     profile = fetch_profile_for_deletion(sr_client, user_id)
+    if not profile:
+        logger.warning("delete_account: no profile row for user_id=%s", user_id)
+
     email, full_name = profile if profile else (None, None)
 
     insert_audit_event(sr_client, user_id, AuditEvent.REQUEST_INITIATED)
