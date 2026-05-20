@@ -119,3 +119,29 @@ class TestFetchReadyPendingEmails:
         rows = fetch_ready_pending_emails(client, limit=50)
 
         assert rows == []
+
+
+from datetime import datetime, timezone
+
+from app.db.client import mark_pending_email_sent
+
+
+class TestMarkPendingEmailSent:
+    def test_updates_sent_at(self):
+        client = MagicMock()
+        eq = client.table.return_value.update.return_value.eq
+        eq.return_value.execute.return_value.data = [{"id": 42}]
+
+        before = datetime.now(timezone.utc)
+        mark_pending_email_sent(client, 42)
+        after = datetime.now(timezone.utc)
+
+        client.table.assert_called_once_with("pending_emails")
+        update_args = client.table.return_value.update.call_args
+        assert list(update_args[0][0].keys()) == ["sent_at"]
+        # Stored as ISO-8601 UTC string; parse it back to verify it's
+        # between before and after.
+        sent_at = datetime.fromisoformat(update_args[0][0]["sent_at"])
+        assert before <= sent_at <= after
+
+        eq.assert_called_once_with("id", 42)

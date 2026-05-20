@@ -1,5 +1,5 @@
 import hashlib
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
 from supabase import Client, create_client
@@ -302,3 +302,15 @@ def fetch_ready_pending_emails(client: Client, limit: int) -> list[dict[str, Any
     """
     response = client.rpc("fetch_ready_pending_emails", {"p_limit": limit}).execute()
     return list(response.data or [])
+
+
+def mark_pending_email_sent(client: Client, row_id: int) -> None:
+    """Mark a pending_emails row as sent.
+
+    Caller has already lock-claimed this row via claim_pending_email or
+    fetch_ready_pending_emails, so a plain UPDATE is safe.
+    """
+    now_iso = datetime.now(timezone.utc).isoformat()
+    client.table("pending_emails").update({"sent_at": now_iso}).eq(
+        "id", row_id
+    ).execute()
