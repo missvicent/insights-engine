@@ -77,3 +77,45 @@ class TestClaimPendingEmail:
         row = claim_pending_email(client, 42)
 
         assert row is None
+
+
+from app.db.client import fetch_ready_pending_emails
+
+
+class TestFetchReadyPendingEmails:
+    def test_calls_rpc_with_limit(self):
+        client = MagicMock()
+        client.rpc.return_value.execute.return_value.data = [
+            {
+                "id": 1,
+                "template": "welcome",
+                "to_email": "a@x.com",
+                "payload": {},
+                "attempts": 0,
+                "max_attempts": 8,
+            },
+            {
+                "id": 2,
+                "template": "account_deleted",
+                "to_email": "b@x.com",
+                "payload": {"first_name": "Bob"},
+                "attempts": 3,
+                "max_attempts": 8,
+            },
+        ]
+
+        rows = fetch_ready_pending_emails(client, limit=50)
+
+        assert len(rows) == 2
+        assert [r["id"] for r in rows] == [1, 2]
+        client.rpc.assert_called_once_with(
+            "fetch_ready_pending_emails", {"p_limit": 50}
+        )
+
+    def test_returns_empty_when_no_rows(self):
+        client = MagicMock()
+        client.rpc.return_value.execute.return_value.data = []
+
+        rows = fetch_ready_pending_emails(client, limit=50)
+
+        assert rows == []

@@ -291,3 +291,14 @@ def claim_pending_email(client: Client, row_id: int) -> dict[str, Any] | None:
     if not response.data:
         return None
     return response.data[0]
+
+
+def fetch_ready_pending_emails(client: Client, limit: int) -> list[dict[str, Any]]:
+    """Claim a batch of due, unsent pending_emails rows for the worker.
+
+    Calls the `fetch_ready_pending_emails` SQL function (FOR UPDATE
+    SKIP LOCKED). Returns the rows in next_run_at order. May return
+    fewer than `limit`.
+    """
+    response = client.rpc("fetch_ready_pending_emails", {"p_limit": limit}).execute()
+    return list(response.data or [])
