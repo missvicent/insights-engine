@@ -16,17 +16,27 @@ services:
         sync: false
       - key: SUPABASE_ANON_KEY
         sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
       - key: CLERK_ISSUER
         sync: false
       - key: CLERK_JWKS_URL
         sync: false
       - key: CLERK_WEBHOOK_SECRET
         sync: false
+      - key: CLERK_SECRET_KEY
+        sync: false
       - key: RESEND_API_KEY
         sync: false
       - key: RESEND_FROM_EMAIL
         sync: false
+      - key: RESEND_TEMPLATE_WELCOME
+        sync: false
+      - key: RESEND_TEMPLATE_ACCOUNT_DELETED
+        sync: false
       - key: CORS_ORIGINS
         sync: false
       - key: CRON_SHARED_SECRET
+        sync: false
+      - key: ACCOUNT_DELETION_ENABLED
         sync: false

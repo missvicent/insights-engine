@@ -80,25 +80,20 @@ Three intentional deviations from the original spec, captured here so future rea
 
 - [x] ~~`account_deletion.py` import bugs (`Response`, `send_account_deleted_email`) — blocks both the suite run and the dark-launch flip.~~ *(Fixed 2026-05-19. Three issues collapsed into one fix: dropped the duplicate `send_account_deleted_email` call (already sent by `deletion_service.delete_account` at line 42), dropped the `return Response(status_code=204)` line (decorator already declares 204; handler returns `None`). The two missing imports vanished with the lines that referenced them. Bonus: avoided a latent `AttributeError` since `UserContext` only carries `user_id` + `db` — `.email` / `.first_name` would have crashed the route the moment the flag flipped on.)*
 - [ ] Full test suite green locally with `ACCOUNT_DELETION_ENABLED=false`.
-- [ ] Staging end-to-end: register both Clerk webhook endpoints, create a throwaway user, confirm welcome email arrives, re-fire to confirm idempotency. (See `projects/personal-budget/2026-05-19-clerk-production-configuration-guide` §4 for the full checklist.)
+- [x] Staging end-to-end: throwaway user, welcome email received, re-fire confirmed idempotency on the single `/webhooks/clerk` endpoint. *(Confirmed by owner 2026-05-20.)*
 
 ## Phase 4 — Ops (no code)
 
 > **Env-var renames since this plan was written (2026-05-19):**
 >
 > - `DELETION_COMPLETED_TEMPLATE_ID` → **`RESEND_TEMPLATE_ACCOUNT_DELETED`** (renamed for symmetry with `RESEND_TEMPLATE_WELCOME`; see Phase 2 line for `resend_template_account_deleted` field).
-> - Webhook URL is **two endpoints**, not one — see Phase 3 deviation note.
+> - Webhook URL is back to a **single endpoint** (`/webhooks/clerk`) per the 2026-05-19 re-collapse — see Phase 3 deviation note 1.
 
-- [ ] `render.yaml` — declare `CLERK_SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ACCOUNT_DELETION_ENABLED` (default false), `RESEND_TEMPLATE_ACCOUNT_DELETED`, `RESEND_TEMPLATE_WELCOME`.
-- [~] Render dashboard — set the secrets; keep `ACCOUNT_DELETION_ENABLED=false`. *(Partial 2026-05-19: added `CLERK_SECRET_KEY`, `RESEND_TEMPLATE_WELCOME`, `RESEND_TEMPLATE_ACCOUNT_DELETED` to unblock the boot. Still owed: confirm `CLERK_WEBHOOK_SECRET` and `RESEND_API_KEY` are also set; verify `ACCOUNT_DELETION_ENABLED` is `false` in Render — local `.env` has it as `true`.)*
+- [x] `render.yaml` — declared `CLERK_SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ACCOUNT_DELETION_ENABLED`, `RESEND_TEMPLATE_ACCOUNT_DELETED`, `RESEND_TEMPLATE_WELCOME` (all `sync: false`). *(2026-05-20.)*
+- [x] Render dashboard — secrets set in cloud; `ACCOUNT_DELETION_ENABLED=false` until the final flip. *(Confirmed by owner 2026-05-20.)*
 - [x] Resend — author the deletion-confirmation template; copy template id into env. *(Template `delete-personal-budget-account` exists in Resend; env var set on Render.)*
-- [ ] Clerk dashboard — webhook URL → **`/webhooks/clerk`** (one
-  endpoint, subscribed to both `user.created` and `user.deleted`); use
-  the existing `CLERK_WEBHOOK_SECRET`; disable Clerk Account Portal
-  "delete account". Delete the previously-registered
-  `/webhooks/clerk/welcome` and `/webhooks/clerk/delete_account`
-  endpoints if they were created during the deviation period.
-- [ ] Clerk "Send test event" → both event types verified.
+- [x] Clerk dashboard — single `/webhooks/clerk` endpoint subscribed to `user.created` and `user.deleted`; Clerk Account Portal "delete account" disabled. *(Confirmed by owner 2026-05-20.)*
+- [x] Clerk "Send test event" → both event types verified. *(Confirmed by owner 2026-05-20.)*
 - [ ] Manual end-to-end with a throwaway user (flag still off, hit route via temporary override): wipe → audit → Clerk delete → email → webhook backstop no-ops.
 - [ ] **Last:** flip `ACCOUNT_DELETION_ENABLED=true`.
 
