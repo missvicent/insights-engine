@@ -314,3 +314,21 @@ def mark_pending_email_sent(client: Client, row_id: int) -> None:
     client.table("pending_emails").update({"sent_at": now_iso}).eq(
         "id", row_id
     ).execute()
+
+
+def mark_pending_email_failed(client: Client, row_id: int, error: str) -> None:
+    """Record a failed send attempt for a pending_emails row.
+
+    Delegates to the `record_pending_email_failure` SQL function, which
+    atomically increments attempts, sets last_error/last_attempted_at,
+    and bumps next_run_at per the exponential backoff
+    (2 ^ new_attempts * 30 seconds).
+
+    The error string is truncated to 2000 chars so a runaway stack
+    trace can't bloat the row.
+    """
+    truncated = error[:2000]
+    client.rpc(
+        "record_pending_email_failure",
+        {"p_id": row_id, "p_error": truncated},
+    ).execute()

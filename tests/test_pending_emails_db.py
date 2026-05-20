@@ -145,3 +145,30 @@ class TestMarkPendingEmailSent:
         assert before <= sent_at <= after
 
         eq.assert_called_once_with("id", 42)
+
+
+from app.db.client import mark_pending_email_failed
+
+
+class TestMarkPendingEmailFailed:
+    def test_calls_rpc_with_id_and_error(self):
+        client = MagicMock()
+        client.rpc.return_value.execute.return_value.data = None
+
+        mark_pending_email_failed(client, 42, "Resend 500")
+
+        client.rpc.assert_called_once_with(
+            "record_pending_email_failure",
+            {"p_id": 42, "p_error": "Resend 500"},
+        )
+
+    def test_truncates_long_error_to_2000_chars(self):
+        client = MagicMock()
+        client.rpc.return_value.execute.return_value.data = None
+
+        long_err = "x" * 5000
+        mark_pending_email_failed(client, 1, long_err)
+
+        call_args = client.rpc.call_args[0]
+        assert call_args[0] == "record_pending_email_failure"
+        assert len(call_args[1]["p_error"]) == 2000
