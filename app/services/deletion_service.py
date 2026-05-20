@@ -5,12 +5,12 @@ from supabase.client import Client
 from app.context import UserContext
 from app.db.client import (
     call_delete_user_data,
+    enqueue_email,
     fetch_profile_for_deletion,
     insert_audit_event,
 )
 from app.models.schemas import AuditEvent
 from app.services.clerk_admin import ClerkAPIError, delete_clerk_user
-from app.services.email_service import send_account_deleted_email
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,12 @@ class ClerkDeleteFailed(Exception):
     """Raised when the Clerk user deletion fails."""
 
 
-def delete_account(user_ctx: UserContext, sr_client: Client) -> None:
+def delete_account(user_ctx: UserContext, sr_client: Client) -> int | None:
+    """Wipe the user's data, delete them from Clerk, enqueue the
+    confirmation email. Returns the pending_emails row id so the route
+    can queue a fast-path BackgroundTask; returns None when no profile
+    row exists (no email to send).
+    """
     user_id = user_ctx.user_id
     profile = fetch_profile_for_deletion(sr_client, user_id)
     if not profile:
@@ -38,5 +43,11 @@ def delete_account(user_ctx: UserContext, sr_client: Client) -> None:
         )
         raise ClerkDeleteFailed(str(e)) from e
 
-    if email:
-        send_account_deleted_email(email, first_name=full_name)
+    if email is None:
+        return None
+    return enqueue_email(
+        sr_client,
+        template="account_deleted",
+        to_email=email,
+        payload={"first_name": full_name},
+    )
