@@ -6,21 +6,6 @@ override only the fields they care about.
 
 from __future__ import annotations
 
-import os
-
-# Provide harmless defaults for required settings *before* any app module
-# is imported, so `app.main` can construct `Settings()` (e.g. for CORS) at
-# import time without each test having to monkeypatch the environment.
-os.environ.setdefault("CLERK_ISSUER", "https://test.clerk.test")
-os.environ.setdefault("CLERK_SECRET_KEY", "sk_test")
-os.environ.setdefault("CRON_SHARED_SECRET", "shh_test_secret")
-os.environ.setdefault("RESEND_TEMPLATE_WELCOME", "tpl_welcome")
-os.environ.setdefault("RESEND_TEMPLATE_ACCOUNT_DELETED", "tpl_deleted")
-os.environ.setdefault("SUPABASE_URL", "https://test.supabase.test")
-os.environ.setdefault("SUPABASE_ANON_KEY", "test-anon-key")
-os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "srv_test")
-os.environ.setdefault("CORS_ORIGINS", "")
-
 import time
 import uuid
 from collections.abc import Callable
