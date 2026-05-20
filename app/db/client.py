@@ -253,3 +253,26 @@ def record_webhook_event(client: Client, svix_id: str) -> bool:
 def call_delete_user_data(client: Client, user_id: str) -> None:
     """Trigger the SQL deletion. Returns void; success = no exception."""
     client.rpc("delete_user_data", {"p_clerk_user_id": user_id}).execute()
+
+
+def enqueue_email(
+    client: Client,
+    template: str,
+    to_email: str,
+    payload: dict[str, Any] | None = None,
+) -> int:
+    """Insert a row into `pending_emails` and return its id.
+
+    The producer (webhook handler or deletion_service) calls this
+    synchronously inside the request. Defaults for attempts,
+    max_attempts, next_run_at, and created_at come from the table
+    definition, so the row is immediately eligible for the fast-path
+    BackgroundTask attempt.
+    """
+    row = {
+        "template": template,
+        "to_email": to_email,
+        "payload": payload or {},
+    }
+    response = client.table("pending_emails").insert(row).execute()
+    return int(response.data[0]["id"])
