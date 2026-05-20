@@ -276,3 +276,18 @@ def enqueue_email(
     }
     response = client.table("pending_emails").insert(row).execute()
     return int(response.data[0]["id"])
+
+
+def claim_pending_email(client: Client, row_id: int) -> dict[str, Any] | None:
+    """Claim a pending_emails row for sending.
+
+    Calls the `claim_pending_email` SQL function, which uses
+    `FOR UPDATE SKIP LOCKED` so the fast path and the cron worker
+    can't double-claim the same row. Returns the row or `None` when
+    the row is already sent, locked by another worker, not yet due,
+    or over max_attempts.
+    """
+    response = client.rpc("claim_pending_email", {"p_id": row_id}).execute()
+    if not response.data:
+        return None
+    return response.data[0]

@@ -43,3 +43,37 @@ class TestEnqueueEmail:
                 "payload": {},
             }
         )
+
+
+from app.db.client import claim_pending_email
+
+
+class TestClaimPendingEmail:
+    def test_returns_row_when_rpc_returns_one(self):
+        client = MagicMock()
+        rpc_execute = client.rpc.return_value.execute
+        rpc_execute.return_value.data = [
+            {
+                "id": 42,
+                "template": "welcome",
+                "to_email": "a@x.com",
+                "payload": {"first_name": "Alice"},
+                "attempts": 0,
+                "max_attempts": 8,
+            }
+        ]
+
+        row = claim_pending_email(client, 42)
+
+        assert row is not None
+        assert row["id"] == 42
+        assert row["template"] == "welcome"
+        client.rpc.assert_called_once_with("claim_pending_email", {"p_id": 42})
+
+    def test_returns_none_when_rpc_returns_empty(self):
+        client = MagicMock()
+        client.rpc.return_value.execute.return_value.data = []
+
+        row = claim_pending_email(client, 42)
+
+        assert row is None
