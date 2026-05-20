@@ -13,6 +13,7 @@ import os
 # import time without each test having to monkeypatch the environment.
 os.environ.setdefault("CLERK_ISSUER", "https://test.clerk.test")
 os.environ.setdefault("CLERK_SECRET_KEY", "sk_test")
+os.environ.setdefault("CRON_SHARED_SECRET", "shh_test_secret")
 os.environ.setdefault("RESEND_TEMPLATE_WELCOME", "tpl_welcome")
 os.environ.setdefault("RESEND_TEMPLATE_ACCOUNT_DELETED", "tpl_deleted")
 os.environ.setdefault("SUPABASE_URL", "https://test.supabase.test")
@@ -228,3 +229,42 @@ class FakeDB:
 
 def make_user_ctx(user_id: str = "user-1", tables: dict | None = None) -> UserContext:
     return UserContext(user_id=user_id, db=FakeDB(tables))
+
+
+def test_cron_shared_secret_is_required(monkeypatch):
+    """CRON_SHARED_SECRET is required at boot — missing value fails."""
+    from app.config import Settings, get_settings
+
+    # Provide every other required field except CRON_SHARED_SECRET.
+    monkeypatch.setenv("CLERK_ISSUER", "https://test.clerk.test")
+    monkeypatch.setenv("CLERK_SECRET_KEY", "sk_test")
+    monkeypatch.setenv("RESEND_TEMPLATE_WELCOME", "tpl_welcome")
+    monkeypatch.setenv("RESEND_TEMPLATE_ACCOUNT_DELETED", "tpl_deleted")
+    monkeypatch.setenv("SUPABASE_URL", "https://x.supabase.test")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "anon_k")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "srv_k")
+    monkeypatch.delenv("CRON_SHARED_SECRET", raising=False)
+    get_settings.cache_clear()
+
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+def test_cron_shared_secret_loads(monkeypatch):
+    from app.config import Settings, get_settings
+
+    monkeypatch.setenv("CLERK_ISSUER", "https://test.clerk.test")
+    monkeypatch.setenv("CLERK_SECRET_KEY", "sk_test")
+    monkeypatch.setenv("RESEND_TEMPLATE_WELCOME", "tpl_welcome")
+    monkeypatch.setenv("RESEND_TEMPLATE_ACCOUNT_DELETED", "tpl_deleted")
+    monkeypatch.setenv("SUPABASE_URL", "https://x.supabase.test")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "anon_k")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "srv_k")
+    monkeypatch.setenv("CRON_SHARED_SECRET", "shh_local_dev_secret")
+    get_settings.cache_clear()
+
+    s = Settings(_env_file=None)
+    assert s.cron_shared_secret == "shh_local_dev_secret"
