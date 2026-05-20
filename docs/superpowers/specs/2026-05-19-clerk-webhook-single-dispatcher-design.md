@@ -1,170 +1,327 @@
-# Clerk Webhook — Single Dispatcher
+# Clerk Webhook — Single Dispatcher + Durable Email Outbox
 
 **Date:** 2026-05-19
 **Owner:** vicentbnf@gmail.com
-**Related:** [2026-05-06-account-deletion-simplified-design.md](2026-05-06-account-deletion-simplified-design.md)
+**Related:**
+- [2026-05-06-account-deletion-simplified-design.md](2026-05-06-account-deletion-simplified-design.md) — the deviation this spec reverses (two webhook endpoints → one).
+- [2026-04-24-budget-archival-cron-design.md](2026-04-24-budget-archival-cron-design.md) — defined the `pg_cron + pg_net → internal endpoint` pattern. **Not yet shipped.** This spec ships that infrastructure for the first time; the archival cron can adopt the same plumbing when it lands.
 
 ## Problem
 
-`app/routes/webhooks_clerk.py` currently exposes two endpoints:
+Two issues to fix together, because they share files:
 
-- `POST /webhooks/clerk/welcome` → handles `user.created`
-- `POST /webhooks/clerk/delete_account` → handles `user.deleted`
+1. **Two webhook endpoints where one suffices.** `app/routes/webhooks_clerk.py:24-122` exposes `POST /webhooks/clerk/welcome` and `POST /webhooks/clerk/delete_account`. Each duplicates the Svix-verify + idempotency preamble. The original account-deletion spec called for a single dispatcher; the split was a deliberate deviation ([plan note](../plans/2026-05-06-account-deletion-simplified.md#L63-L69)) that has not paid off.
+2. **Email delivery is lossy.** Both endpoints (and `deletion_service.delete_account` step 5) use `BackgroundTasks` or a synchronous Resend call. If the process is killed between the DB work and the Resend HTTP call, or if Resend itself fails transiently, the email is silently lost. There is no retry, no record, no operator visibility. For an account-deleted receipt (compliance-adjacent) and a welcome email (first impression), silent loss is not acceptable.
 
-This duplicates the Svix-verify + idempotency-check preamble in both
-handlers and forces Clerk to manage two separate webhook registrations
-(each with its own URL but the same secret). The original spec
-([account-deletion-simplified, deviation note](../plans/2026-05-06-account-deletion-simplified.md#L63-L69))
-called for a single dispatcher; the two-endpoint split was a deliberate
-deviation that has not paid off. This spec reverses that deviation.
+## Goals
 
-## Goal
-
-One webhook URL — `POST /webhooks/clerk` — that verifies the Svix
-signature once, enforces idempotency once, and dispatches on
-`event.type` to the correct service call and the correct Resend
-template.
+- One Clerk webhook URL: `POST /webhooks/clerk` dispatches on `event.type`.
+- **No silently lost emails** for `welcome` or `account_deleted`, on either the webhook-driven or route-driven path.
+- Fast happy path: the welcome email still arrives within seconds for the typical case (Resend up, process alive).
+- Operator visibility: a stuck email is queryable in Postgres.
 
 ## Non-goals
 
-- Changing what `send_welcome_email` or `send_account_deleted_email`
-  do internally.
-- Changing the Svix verification mechanism or env var
-  (`CLERK_WEBHOOK_SECRET` stays shared, as it already is).
-- Adding new Clerk event subscriptions beyond `user.created` and
-  `user.deleted`.
-- Frontend changes.
+- Adding new Clerk event subscriptions beyond `user.created` and `user.deleted`.
+- Re-authoring the Resend templates themselves.
+- Generalizing the outbox to non-email notifications (push, in-app).
+- A web UI for the dead-letter queue. Operators read it via SQL for now.
+- Shipping the archival cron in this spec — only its `/internal/...` + `CRON_SHARED_SECRET` plumbing is shared.
 
 ## Design
 
-### Route
-
-Replace both handlers in `app/routes/webhooks_clerk.py` with a single
-handler:
+### Architecture overview
 
 ```
-POST /webhooks/clerk → 204 (always, on success or duplicate or unknown event)
-                   → 401 on Svix signature failure
+┌──────────────────────┐         ┌───────────────────────┐
+│ Producer (webhook    │         │ Producer (route       │
+│  /webhooks/clerk)    │         │  /account/delete)     │
+└──────────┬───────────┘         └───────────┬───────────┘
+           │   1. INSERT pending_emails row  │
+           └─────────────────┬───────────────┘
+                             │
+                             ▼
+                ┌──────────────────────────┐
+                │ public.pending_emails    │
+                │  (durable Postgres row)  │
+                └──────────┬───────────────┘
+                           │
+        ┌──────────────────┼──────────────────────────┐
+        │ fast path        │  cron-driven safety net  │
+        │ (same request)   │                          │
+        ▼                  ▼                          ▼
+┌─────────────────┐   ┌─────────────────────────┐
+│ BackgroundTask: │   │ pg_cron (every minute): │
+│ try_send_       │   │   pg_net.http_post →    │
+│ pending_email   │   │ /internal/emails/flush  │
+│ (row_id)        │   │   (Bearer secret)       │
+└────────┬────────┘   └────────────┬────────────┘
+         │                         │
+         └────────────┬────────────┘
+                      ▼
+              ┌──────────────────┐
+              │ email_service    │
+              │ ._send → Resend  │
+              └──────────────────┘
+                      │
+              ┌───────┴──────────┐
+              ▼                  ▼
+      mark_sent(row)     mark_failed(row,
+                          error, backoff)
 ```
 
-### Handler flow
+### `pending_emails` table
 
-1. Read the raw request body and the three Svix headers
-   (`svix-id`, `svix-timestamp`, `svix-signature`).
-2. Verify with `Webhook(get_settings().clerk_webhook_secret).verify(...)`.
-   Raise `HTTPException(401, "Invalid signature")` on
-   `WebhookVerificationError`.
-3. Build a service-role client (`build_service_role_client()`).
-4. `record_webhook_event(sr_client, svix_id)` → if `False` (duplicate),
-   log at INFO and return `None` (the route is declared
-   `status_code=204`).
-5. Parse the JSON payload, read `event.type`, log it at INFO.
-6. Dispatch:
-   - **`user.created`** → extract the primary email by matching
-     `data.primary_email_address_id` against `data.email_addresses[].id`.
-     If no primary email, log a warning and return.
-     Otherwise `background_tasks.add_task(send_welcome_email,
-     primary_email, data.get("first_name"))`.
-   - **`user.deleted`** → read `data.id`. If missing, log a warning
-     and return. Otherwise:
-     a. `profile = fetch_profile_for_deletion(sr_client, user_id)`
-     b. `call_delete_user_data(sr_client, user_id)`
-     c. If `profile`: `background_tasks.add_task(send_account_deleted_email,
-        email, full_name)`.
-   - **Anything else** (`session.*`, `email.*`, …) → log
-     `"Unhandled Clerk event type=%s"` at INFO and return. Returning
-     204 prevents Clerk from retrying events we don't care about.
+New migration `supabase/migrations/<ts>_pending_emails.sql`:
 
-### Template mapping (the "correct template" requirement)
+```sql
+CREATE TABLE IF NOT EXISTS public.pending_emails (
+    id                 bigserial PRIMARY KEY,
+    template           text NOT NULL
+        CHECK (template IN ('welcome', 'account_deleted')),
+    to_email           text NOT NULL,
+    payload            jsonb NOT NULL DEFAULT '{}'::jsonb,
+    attempts           int   NOT NULL DEFAULT 0,
+    max_attempts       int   NOT NULL DEFAULT 8,
+    next_run_at        timestamptz NOT NULL DEFAULT now(),
+    last_attempted_at  timestamptz,
+    last_error         text,
+    sent_at            timestamptz,
+    created_at         timestamptz NOT NULL DEFAULT now()
+);
 
-The dispatcher is the single place that decides which event triggers
-which email. The mapping is hardcoded by the dispatch branches:
+-- Worker query: rows ready to attempt, ordered by readiness.
+-- Partial index keeps it tiny once rows are marked sent.
+CREATE INDEX IF NOT EXISTS idx_pending_emails_ready
+    ON public.pending_emails (next_run_at)
+    WHERE sent_at IS NULL;
 
-| Event | Service call | Resend template env var |
-| --- | --- | --- |
-| `user.created` | `send_welcome_email` | `RESEND_TEMPLATE_WELCOME` |
-| `user.deleted` | `send_account_deleted_email` | `RESEND_TEMPLATE_ACCOUNT_DELETED` |
+ALTER TABLE public.pending_emails ENABLE ROW LEVEL SECURITY;
+-- No policies are created. The table is service-role-only by design;
+-- authenticated users must never see or modify it.
+```
 
-Neither service function changes; the dispatcher just routes to the
-right one. This is the part the previous split risked drifting:
-collapsing into one handler makes the mapping obvious in one place.
+**Field semantics:**
+- `template` — drives which Resend template id is used at send time. Constrained to the two values we actually support. Adding a third later means a migration; that's a feature, not a bug.
+- `payload` — variables for the template. For both current templates the only key is `first_name` (mapped to Resend variable `USER` inside `email_service`).
+- `attempts` / `max_attempts` — cap retries. Default `max_attempts=8`. With the backoff schedule below this covers ~2h of outage.
+- `next_run_at` — earliest moment to retry. Initially `now()` so the first attempt is immediate.
+- `sent_at` — non-null = done. The partial index excludes these rows so the worker query stays fast.
+- `last_attempted_at` / `last_error` — operator-facing debugging. Last error wins; no full attempt log (YAGNI for now).
 
-### Email delivery — both events use BackgroundTasks
+**Backoff:** when an attempt fails, `mark_pending_email_failed` increments `attempts` and sets `next_run_at = now() + (2 ^ attempts) * interval '30 seconds'`. So gaps between successive attempts are: immediate (fast path) → 60s → 2m → 4m → 8m → 16m → 32m → 64m → 128m. With `max_attempts=8` the row burns through ~4.3h of retry window before getting stuck. After `attempts >= max_attempts` the row is stuck: `sent_at IS NULL`, no further work. Operators see it via `SELECT … WHERE attempts >= max_attempts AND sent_at IS NULL`.
 
-Both email sends go through `background_tasks.add_task(...)` so the
-webhook returns 204 immediately after the synchronous database work
-(idempotency insert, plus `call_delete_user_data` for the delete path)
-completes. Rationale:
+### Route: `POST /webhooks/clerk`
 
-- Resend latency does not delay the 204, which keeps us well inside
-  Clerk's webhook timeout budget.
-- `email_service._send` already wraps Resend in `try/except Exception`
-  and returns `False`, so a Resend outage can't fail the deletion. The
-  background task inherits that safety.
-- Accepted risk: if the API process is killed between queueing and the
-  HTTP call to Resend, the email is lost (FastAPI BackgroundTasks have
-  no persistence or retry). For both events this is acceptable — the
-  destructive work (DB wipe on `user.deleted`) has already committed,
-  and the worst case for `user.created` is a missed welcome email,
-  which is non-critical. We accept this rather than adding a job queue
-  for two non-essential email sends.
+Replaces both existing handlers in `app/routes/webhooks_clerk.py`.
+
+```
+1. Read body + svix-id/timestamp/signature headers.
+2. Svix verify → 401 on WebhookVerificationError.
+3. sr_client = build_service_role_client()
+4. if not record_webhook_event(sr_client, svix_id): log + return (204)
+5. event = json.loads(payload); type = event["type"]; log
+6. dispatch on type:
+     "user.created":
+        primary_email = <pick from email_addresses by primary_email_address_id>
+        if not primary_email: log warning + return
+        row_id = enqueue_email(sr_client,
+                               template="welcome",
+                               to_email=primary_email,
+                               payload={"first_name": data.get("first_name")})
+        background_tasks.add_task(try_send_pending_email, row_id)
+
+     "user.deleted":
+        user_id = data.get("id")
+        if not user_id: log warning + return
+        profile = fetch_profile_for_deletion(sr_client, user_id)
+        call_delete_user_data(sr_client, user_id)
+        if profile:
+            email, full_name = profile
+            row_id = enqueue_email(sr_client,
+                                   template="account_deleted",
+                                   to_email=email,
+                                   payload={"first_name": full_name})
+            background_tasks.add_task(try_send_pending_email, row_id)
+
+     anything else:
+        log "unhandled Clerk event type=%s" + return (204)
+7. Always 204 unless step 2 raised 401.
+```
+
+The destructive DB work (`call_delete_user_data`) stays in-request — that part already is idempotent and cannot be deferred without re-introducing the lost-work risk we just fixed for email.
+
+### Route-driven path: `deletion_service.delete_account`
+
+In `app/services/deletion_service.py`, step 5 of the existing flow (call `send_account_deleted_email` directly) becomes:
+
+```python
+row_id = enqueue_email(
+    sr_client,
+    template="account_deleted",
+    to_email=email,
+    payload={"first_name": full_name},
+)
+# Fast-path attempt happens in the route layer via BackgroundTasks; the
+# service stays pure (no FastAPI BackgroundTasks dependency).
+return row_id
+```
+
+The route (`POST /account/delete`) then does `background_tasks.add_task(try_send_pending_email, row_id)` after `delete_account` returns, mirroring the webhook handler.
+
+This keeps `deletion_service` free of FastAPI types (per `CLAUDE.md` architecture rule that services receive plain data and don't hold framework references).
+
+### Internal endpoint: `POST /internal/emails/flush`
+
+New file `app/routes/internal_emails.py`. Registered in `app/main.py`.
+
+```
+POST /internal/emails/flush
+  Auth: Authorization: Bearer <CRON_SHARED_SECRET>  (FastAPI dependency)
+  Body: optional {"batch_size": int}  (default 50, capped at 200)
+  Behavior:
+    rows = fetch_ready_pending_emails(sr_client, limit=batch_size)
+    for row in rows:
+        ok = try_send_pending_email(row.id)   # reuses the same fn the fast path uses
+    return {"sent": <n>, "failed": <n>, "scanned": len(rows)}
+```
+
+The endpoint is thin glue. All locking/state logic lives in
+`try_send_pending_email(row_id)`:
+
+```
+def try_send_pending_email(row_id: int) -> bool:
+    1. sr_client = build_service_role_client()
+    2. row = claim_pending_email(sr_client, row_id)
+       # SELECT … WHERE id = ? AND sent_at IS NULL
+       #   AND next_run_at <= now() AND attempts < max_attempts
+       #   FOR UPDATE SKIP LOCKED
+       # → returns row or None
+       # SKIP LOCKED ensures the fast path and the cron worker never
+       # collide on the same row; whichever gets the lock first sends.
+    3. if row is None: return False  # already sent, claimed, or not due
+    4. ok = email_service._send(row.to_email, <template_id from row.template>,
+                                {"USER": row.payload.get("first_name")})
+    5. if ok: mark_pending_email_sent(sr_client, row_id)
+       else:  mark_pending_email_failed(sr_client, row_id, error="resend rejected")
+              # bumps attempts; computes next_run_at via backoff
+    6. return ok
+```
+
+**Concurrency safety:** the producer's fast-path BackgroundTask and the cron-driven flush can both fire shortly after a row is inserted. `FOR UPDATE SKIP LOCKED` inside `claim_pending_email` makes that safe — only one wins the lock per call. The loser observes the locked row and returns `None`.
+
+**Auth dependency:** new `verify_cron_secret` dependency in `app/routes/deps.py`. Reads `Authorization: Bearer …` and compares to `settings.cron_shared_secret`. 401 on mismatch. **No JWT decoding here** — preserves the `CLAUDE.md` rule that JWT verification only lives in `get_user_ctx`.
 
 ### Files changed
 
-- `app/routes/webhooks_clerk.py` — rewrite to a single handler.
-  Remove `webhooks_delete_account` and `welcome_webhook`.
-- `app/main.py` — no router include change (the router itself is
-  unchanged, only its routes).
-- `docs/superpowers/plans/2026-05-06-account-deletion-simplified.md` —
-  update Phase 3 deviation note (lines 63-69) and Phase 4 Clerk
-  dashboard checklist (line 87) to reflect a single endpoint
-  subscribed to both event types.
-- `tests/test_webhooks_clerk.py` (new) — five test cases below.
+- `app/routes/webhooks_clerk.py` — rewrite to single dispatcher.
+- `app/services/deletion_service.py` — swap `send_account_deleted_email` call for `enqueue_email`; return `row_id`.
+- `app/routes/account_deletion.py` — after `delete_account` returns, queue `try_send_pending_email(row_id)` via BackgroundTasks.
+- `app/services/email_service.py` — add `try_send_pending_email(row_id) -> bool` (consumer-side). Existing `send_welcome_email` / `send_account_deleted_email` stay (they're the actual Resend call sites; `try_send_pending_email` chooses between them based on `row.template`).
+- `app/db/client.py` — add helpers: `enqueue_email`, `claim_pending_email`, `mark_pending_email_sent`, `mark_pending_email_failed`, `fetch_ready_pending_emails`.
+- `app/routes/internal_emails.py` (new) — `POST /internal/emails/flush` + secret-bearer dependency.
+- `app/routes/deps.py` — add `verify_cron_secret` dependency.
+- `app/config.py` — add `cron_shared_secret: str` setting (required).
+- `app/main.py` — include the new router.
+- `supabase/migrations/<ts>_pending_emails.sql` — new table + index + RLS-on with no policies.
+- `docs/superpowers/plans/2026-05-06-account-deletion-simplified.md` — update Phase 3 deviation note (lines 63-69) and Phase 4 Clerk dashboard line (87) to a single endpoint.
+- `tests/test_webhooks_clerk.py` (new), `tests/test_internal_emails.py` (new), `tests/test_pending_emails_db.py` (new), updates to `tests/test_deletion_service.py`.
 
 ### Tests
 
-New file `tests/test_webhooks_clerk.py`, using FastAPI's `TestClient`
-and stubbing `svix.webhooks.Webhook.verify` plus the db/service
-helpers:
+**`tests/test_webhooks_clerk.py`** (5 cases, stubbing `Webhook.verify`, db helpers, and `try_send_pending_email`):
+1. Bad signature → 401, no db writes.
+2. Duplicate svix-id → 204, no enqueue.
+3. `user.created` → 204, `enqueue_email("welcome", primary_email, {"first_name": ...})` called once, BackgroundTask queued with the returned `row_id`.
+4. `user.deleted` → 204, `call_delete_user_data` called, `enqueue_email("account_deleted", profile_email, {"first_name": full_name})` called once, BackgroundTask queued.
+5. Unknown event type → 204, no enqueue.
 
-1. **Bad signature → 401.** `Webhook.verify` raises
-   `WebhookVerificationError`; no db or service calls happen.
-2. **Duplicate svix-id → 204, no work.** `record_webhook_event`
-   returns `False`; assert neither `call_delete_user_data` nor any
-   email task is queued.
-3. **`user.created` → 204 + welcome email queued.** Payload has
-   `primary_email_address_id` matching one entry in `email_addresses`;
-   assert `background_tasks` contains a task calling
-   `send_welcome_email` with that email and the `first_name`.
-4. **`user.deleted` → 204 + delete + account-deleted email queued.**
-   `fetch_profile_for_deletion` returns `("alice@example.com", "Alice")`;
-   assert `call_delete_user_data` called with the user_id and a task
-   queued for `send_account_deleted_email(email, full_name)`.
-5. **Unknown event type → 204, no work.** Payload `type: "session.created"`;
-   assert no db writes beyond the idempotency insert and no email tasks.
+Edge cases (3b/4b): `user.created` with no primary email → no enqueue; `user.deleted` with no `data.id` → no enqueue, no DB wipe.
 
-Edge cases covered by 3 and 4: `user.created` with no primary email
-(early-return after logging — assert no task queued) and
-`user.deleted` with no `data.id` (early-return — assert no
-`call_delete_user_data`). These can be parametrized into cases 3
-and 4 or added as 3b/4b — implementer's call.
+**`tests/test_deletion_service.py`** (updates):
+- Happy path now asserts `enqueue_email` is called (not `send_account_deleted_email` directly), and the function returns `row_id`.
 
-### Ops (manual, after merge)
+**`tests/test_internal_emails.py`** (new):
+- Bad/missing bearer → 401.
+- Valid bearer, no ready rows → 200 with `{"sent": 0, "failed": 0, "scanned": 0}`.
+- Valid bearer, two ready rows, both Resend-succeed → 200 with `{"sent": 2, …}` and both rows have `sent_at` set.
+- Resend fails → row's `attempts` incremented, `next_run_at` bumped per backoff, `last_error` recorded.
 
-This is **not code**. Listed here so the spec is the single source for
-the end-to-end change.
+**`tests/test_pending_emails_db.py`** (new):
+- `enqueue_email` inserts with defaults (attempts=0, next_run_at≈now).
+- `claim_pending_email` returns the row when ready, returns None when `sent_at IS NOT NULL`, returns None when `next_run_at > now()`.
+- `mark_pending_email_sent` sets `sent_at`.
+- `mark_pending_email_failed` increments `attempts`, sets `last_error`, sets `next_run_at` per the backoff formula.
 
-- **Clerk dashboard:** delete the two existing webhook registrations
-  (`…/webhooks/clerk/welcome` and `…/webhooks/clerk/delete_account`).
-  Create one registration pointing at `…/webhooks/clerk` subscribed to
-  both `user.created` and `user.deleted`. Keep the same signing
-  secret (the existing `CLERK_WEBHOOK_SECRET` is reused).
-- **Verify:** Clerk "Send test event" for each of the two subscribed
-  events; confirm 204 in both cases and the expected email lands.
+Unit tests use a fake supabase client (matching the existing `test_db_client.py` pattern). The `FOR UPDATE SKIP LOCKED` behavior is a Postgres feature; unit tests assert the query string includes it but don't simulate locking.
+
+### Configuration
+
+- New env var: `CRON_SHARED_SECRET` (string, required). Add to `.env.example` (with a placeholder value), declare in `render.yaml` with `sync: false`, set the real value as a secret in the Render dashboard, and store the same value in Supabase Vault as `CRON_SHARED_SECRET` (used by the pg_cron job to authenticate to the internal endpoint).
+- `app/config.py` Settings adds `cron_shared_secret: str` with no default — missing value fails at boot, per CLAUDE.md ("Misconfiguration fails at app boot").
+
+### Ops (manual)
+
+This is the deployment runbook for the cron piece. **Not code.**
+
+1. Deploy the app with the new `/internal/emails/flush` route and `CRON_SHARED_SECRET` env var set in Render.
+2. In Supabase SQL editor, one-time setup:
+   ```sql
+   CREATE EXTENSION IF NOT EXISTS pg_cron;
+   CREATE EXTENSION IF NOT EXISTS pg_net;
+   SELECT vault.create_secret('CRON_SHARED_SECRET', '<same value as Render env var>');
+   SELECT cron.schedule(
+       'flush-pending-emails',
+       '* * * * *',  -- every minute
+       $$
+       SELECT net.http_post(
+           url := 'https://<render-host>/internal/emails/flush',
+           headers := jsonb_build_object(
+               'Authorization',
+               'Bearer ' || (
+                   SELECT decrypted_secret
+                   FROM vault.decrypted_secrets
+                   WHERE name = 'CRON_SHARED_SECRET'
+               ),
+               'Content-Type', 'application/json'
+           ),
+           body := '{}'::jsonb
+       );
+       $$
+   );
+   ```
+3. Verify with `SELECT * FROM cron.job_run_details ORDER BY start_time DESC LIMIT 5;` after waiting a minute.
+4. **Clerk dashboard:** delete the two webhook registrations (`…/webhooks/clerk/welcome` and `…/webhooks/clerk/delete_account`). Create one registration at `…/webhooks/clerk` subscribed to both `user.created` and `user.deleted`. Reuse the existing `CLERK_WEBHOOK_SECRET`.
+5. Clerk "Send test event" for `user.created` and `user.deleted`; confirm 204 in both cases, that a `pending_emails` row appears, that the row's `sent_at` becomes non-null within one minute, and that the email arrives.
+
+### Operator queries (post-deploy)
+
+```sql
+-- Anything stuck (exceeded max attempts):
+SELECT id, template, to_email, attempts, last_error, last_attempted_at
+FROM public.pending_emails
+WHERE sent_at IS NULL AND attempts >= max_attempts
+ORDER BY created_at DESC;
+
+-- Anything waiting (not yet attempted or in backoff):
+SELECT id, template, to_email, attempts, next_run_at, last_error
+FROM public.pending_emails
+WHERE sent_at IS NULL AND attempts < max_attempts
+ORDER BY next_run_at;
+```
+
+## Risks and trade-offs
+
+- **First pg_cron in the project.** Whoever runs the deploy needs Supabase SQL editor access and the secret. The archival cron design has already been reviewed for this pattern; we're just shipping it for real.
+- **Two attempt paths (fast-path BackgroundTask + cron) per row.** Mitigated by `FOR UPDATE SKIP LOCKED` in `claim_pending_email`. Without that, both could send the same email twice.
+- **No dead-letter alerting.** Stuck rows sit until an operator queries. Adding alerting (Sentry, Slack) is out of scope here; the SQL query is documented as the interim mechanism.
+- **Resend permanent failures.** A 4xx response (e.g., template id wrong) will burn through all 8 attempts within ~2h. That's fine — the row stays for inspection — but it's a soft pager-level signal we don't currently page on.
+- **No row TTL.** `pending_emails` grows forever (slowly). Add a cleanup job ("delete WHERE sent_at < now() - interval '30 days'") later if it matters. The partial index keeps the hot path fast regardless.
 
 ## Out of scope
 
-- Retry/persistence for background-task email sends.
-- Other Clerk events (organization membership, sessions, etc.).
-- Reverting any Resend template content — the templates themselves
-  are correct; only the dispatcher routing needs to be unified.
+- Generalizing the outbox to other event types (push, SMS, in-app).
+- Email rate limiting per user.
+- A retry-now operator action via API/UI.
+- Alerting on stuck rows.
+- Migrating the (not-yet-shipped) archival cron design to share this `/internal/...` plumbing — easy follow-up but separate.
