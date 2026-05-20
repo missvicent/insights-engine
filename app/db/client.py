@@ -1,5 +1,5 @@
 import hashlib
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
 from supabase import Client, create_client
@@ -253,3 +253,82 @@ def record_webhook_event(client: Client, svix_id: str) -> bool:
 def call_delete_user_data(client: Client, user_id: str) -> None:
     """Trigger the SQL deletion. Returns void; success = no exception."""
     client.rpc("delete_user_data", {"p_clerk_user_id": user_id}).execute()
+
+
+def enqueue_email(
+    client: Client,
+    template: str,
+    to_email: str,
+    payload: dict[str, Any] | None = None,
+) -> int:
+    """Insert a row into `pending_emails` and return its id.
+
+    The producer (webhook handler or deletion_service) calls this
+    synchronously inside the request. Defaults for attempts,
+    max_attempts, next_run_at, and created_at come from the table
+    definition, so the row is immediately eligible for the fast-path
+    BackgroundTask attempt.
+    """
+    row = {
+        "template": template,
+        "to_email": to_email,
+        "payload": payload or {},
+    }
+    response = client.table("pending_emails").insert(row).execute()
+    return int(response.data[0]["id"])
+
+
+def claim_pending_email(client: Client, row_id: int) -> dict[str, Any] | None:
+    """Claim a pending_emails row for sending.
+
+    Calls the `claim_pending_email` SQL function, which uses
+    `FOR UPDATE SKIP LOCKED` so the fast path and the cron worker
+    can't double-claim the same row. Returns the row or `None` when
+    the row is already sent, locked by another worker, not yet due,
+    or over max_attempts.
+    """
+    response = client.rpc("claim_pending_email", {"p_id": row_id}).execute()
+    if not response.data:
+        return None
+    return response.data[0]
+
+
+def fetch_ready_pending_emails(client: Client, limit: int) -> list[dict[str, Any]]:
+    """Claim a batch of due, unsent pending_emails rows for the worker.
+
+    Calls the `fetch_ready_pending_emails` SQL function (FOR UPDATE
+    SKIP LOCKED). Returns the rows in next_run_at order. May return
+    fewer than `limit`.
+    """
+    response = client.rpc("fetch_ready_pending_emails", {"p_limit": limit}).execute()
+    return list(response.data or [])
+
+
+def mark_pending_email_sent(client: Client, row_id: int) -> None:
+    """Mark a pending_emails row as sent.
+
+    Caller has already lock-claimed this row via claim_pending_email or
+    fetch_ready_pending_emails, so a plain UPDATE is safe.
+    """
+    now_iso = datetime.now(timezone.utc).isoformat()
+    client.table("pending_emails").update({"sent_at": now_iso}).eq(
+        "id", row_id
+    ).execute()
+
+
+def mark_pending_email_failed(client: Client, row_id: int, error: str) -> None:
+    """Record a failed send attempt for a pending_emails row.
+
+    Delegates to the `record_pending_email_failure` SQL function, which
+    atomically increments attempts, sets last_error/last_attempted_at,
+    and bumps next_run_at per the exponential backoff
+    (2 ^ new_attempts * 30 seconds).
+
+    The error string is truncated to 2000 chars so a runaway stack
+    trace can't bloat the row.
+    """
+    truncated = error[:2000]
+    client.rpc(
+        "record_pending_email_failure",
+        {"p_id": row_id, "p_error": truncated},
+    ).execute()

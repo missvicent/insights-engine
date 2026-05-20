@@ -28,3 +28,5 @@ services:
         sync: false
       - key: CORS_ORIGINS
         sync: false
+      - key: CRON_SHARED_SECRET
+        sync: false

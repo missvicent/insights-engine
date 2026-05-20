@@ -50,22 +50,54 @@ Svix-verified `user.created` welcome flow in `routes/emails.py`.
   - [x] Service-layer unit tests in `tests/test_deletion_service.py`: happy path ✅, profile-not-found ✅, clerk-delete-failed ✅.
 - [x] `app/routes/account_deletion.py` — `POST /account/delete` (Clerk JWT). 503 if `account_deletion_enabled` is False. Build service-role client, call `delete_account(...)`, return 204. Map `ClerkDeleteFailed` → 502.
 - [x] `app/main.py` — `include_router(account_deletion.router)`. *(Imported as bare `account_deletion`, not `account_deletion_routes` — deviates from the existing `*_routes` convention on the other four routers; intentional.)*
-- [ ] `app/routes/deps.py` — after JWT verify, `profile_exists(...)` against a service-role client; missing → 401 with the same uniform "invalid token" detail. **Bring `tests/test_deps.py` forward to the current Clerk shape first** (it still tests the old `authorization=` arg + `supabase_jwt_secret`); then add the missing-profile case.
-- [ ] `app/routes/webhooks_clerk.py` — single `POST /webhooks/clerk`:
+- [x] `app/routes/deps.py` — after JWT verify, `profile_exists(...)` against a service-role client; missing → 401 with the same uniform "invalid token" detail. **Bring `tests/test_deps.py` forward to the current Clerk shape first** (it still tests the old `authorization=` arg + `supabase_jwt_secret`); then add the missing-profile case. *(Done 2026-05-18; full rewrite of `test_deps.py` with RSA keypair fixture + 9 cases. See `projects/personal-budget/2026-05-18-account-deletion-route-and-deps-guard` in the vault.)*
+- [x] `app/routes/webhooks_clerk.py` — ~~single `POST /webhooks/clerk`~~ **split into two endpoints** (see deviation note below):
   - Svix verify (existing pattern in `emails.py`) → 401 on bad sig.
-  - `record_webhook_event(svix_id)` → if False, return 200 immediately.
-  - `event.type == "user.created"` → existing welcome-email path.
-  - `event.type == "user.deleted"` → `call_delete_user_data(...)` (idempotent backstop).
-- [ ] `app/main.py` — `include_router(webhooks_clerk_routes.router)`.
-- [ ] Run full suite green with `account_deletion_enabled=False` (dark launch).
-- [ ] **After staging confirms `webhooks_clerk.py` handles `user.created` end-to-end:** delete `app/routes/emails.py` and remove its `include_router`. Last commit of the phase.
+  - `record_webhook_event(svix_id)` → if False, return ~~200~~ **204** immediately.
+  - `event.type == "user.created"` → existing welcome-email path → `POST /webhooks/clerk/welcome`.
+  - `event.type == "user.deleted"` → `call_delete_user_data(...)` (idempotent backstop) → `POST /webhooks/clerk/delete_account`.
+- [x] `app/main.py` — `include_router(webhooks_clerk_routes.router)`. *(Imported as bare `webhooks_clerk`, not `webhooks_clerk_routes` — same convention deviation noted on the `account_deletion` line above. Both endpoints registered.)*
+- [ ] Run full suite green with `account_deletion_enabled=False` (dark launch). *(Blocked: `app/routes/account_deletion.py` has latent broken imports — `Response`, `send_account_deleted_email` — that would fail any test exercising the route. Fix before running the suite.)*
+- [x] **After staging confirms `webhooks_clerk.py` handles `user.created` end-to-end:** delete `app/routes/emails.py` and remove its `include_router`. Last commit of the phase. *(Done **out of order** 2026-05-19: file removed and `include_router` line dropped from `main.py` before staging verification. Staging end-to-end check for `user.created` is now back-owed — see "Outstanding verification" below. `emails.py` is recoverable from git history if rollback needed.)*
+
+### Phase 3 deviations from plan (recorded 2026-05-19)
+
+Three intentional deviations from the original spec, captured here so future readers don't grep for the plan-shaped artifacts and conclude the work is missing:
+
+1. **Two webhook URLs → back to one.** Originally shipped as two endpoints
+   (`POST /webhooks/clerk/welcome` and `POST /webhooks/clerk/delete_account`).
+   Reversed 2026-05-19 per
+   [2026-05-19-clerk-webhook-single-dispatcher-design.md](../specs/2026-05-19-clerk-webhook-single-dispatcher-design.md):
+   now `POST /webhooks/clerk` dispatches on `event.type`. Same
+   `CLERK_WEBHOOK_SECRET`. Same idempotency check. The collapse also
+   moved both emails onto a durable `pending_emails` outbox so process
+   crashes or transient Resend failures can no longer silently lose a
+   welcome or account-deleted email.
+2. **Duplicate svix-id returns 204, not 200.** Plan said "return 200 immediately" on duplicate; shipped code uses `status_code=204` decorator + `-> None` everywhere for consistency with the rest of the deletion path. Clerk does not read response bodies, so this is invisible upstream.
+3. **`emails.py` deletion done before the staging gate it was supposed to wait on.** See checkbox note above. Mitigation: run the staging verification today (see Outstanding verification).
+
+### Outstanding verification (back-owed before Phase 4 flip)
+
+- [x] ~~`account_deletion.py` import bugs (`Response`, `send_account_deleted_email`) — blocks both the suite run and the dark-launch flip.~~ *(Fixed 2026-05-19. Three issues collapsed into one fix: dropped the duplicate `send_account_deleted_email` call (already sent by `deletion_service.delete_account` at line 42), dropped the `return Response(status_code=204)` line (decorator already declares 204; handler returns `None`). The two missing imports vanished with the lines that referenced them. Bonus: avoided a latent `AttributeError` since `UserContext` only carries `user_id` + `db` — `.email` / `.first_name` would have crashed the route the moment the flag flipped on.)*
+- [ ] Full test suite green locally with `ACCOUNT_DELETION_ENABLED=false`.
+- [ ] Staging end-to-end: register both Clerk webhook endpoints, create a throwaway user, confirm welcome email arrives, re-fire to confirm idempotency. (See `projects/personal-budget/2026-05-19-clerk-production-configuration-guide` §4 for the full checklist.)
 
 ## Phase 4 — Ops (no code)
 
-- [ ] `render.yaml` — declare `CLERK_SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ACCOUNT_DELETION_ENABLED` (default false), `DELETION_COMPLETED_TEMPLATE_ID`.
-- [ ] Render dashboard — set the three secrets; keep `ACCOUNT_DELETION_ENABLED=false`.
-- [ ] Resend — author the deletion-confirmation template; copy template id into env.
-- [ ] Clerk dashboard — webhook URL → `/webhooks/clerk`; subscribe `user.created` + `user.deleted`; disable Clerk Account Portal "delete account".****
+> **Env-var renames since this plan was written (2026-05-19):**
+>
+> - `DELETION_COMPLETED_TEMPLATE_ID` → **`RESEND_TEMPLATE_ACCOUNT_DELETED`** (renamed for symmetry with `RESEND_TEMPLATE_WELCOME`; see Phase 2 line for `resend_template_account_deleted` field).
+> - Webhook URL is **two endpoints**, not one — see Phase 3 deviation note.
+
+- [ ] `render.yaml` — declare `CLERK_SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ACCOUNT_DELETION_ENABLED` (default false), `RESEND_TEMPLATE_ACCOUNT_DELETED`, `RESEND_TEMPLATE_WELCOME`.
+- [~] Render dashboard — set the secrets; keep `ACCOUNT_DELETION_ENABLED=false`. *(Partial 2026-05-19: added `CLERK_SECRET_KEY`, `RESEND_TEMPLATE_WELCOME`, `RESEND_TEMPLATE_ACCOUNT_DELETED` to unblock the boot. Still owed: confirm `CLERK_WEBHOOK_SECRET` and `RESEND_API_KEY` are also set; verify `ACCOUNT_DELETION_ENABLED` is `false` in Render — local `.env` has it as `true`.)*
+- [x] Resend — author the deletion-confirmation template; copy template id into env. *(Template `delete-personal-budget-account` exists in Resend; env var set on Render.)*
+- [ ] Clerk dashboard — webhook URL → **`/webhooks/clerk`** (one
+  endpoint, subscribed to both `user.created` and `user.deleted`); use
+  the existing `CLERK_WEBHOOK_SECRET`; disable Clerk Account Portal
+  "delete account". Delete the previously-registered
+  `/webhooks/clerk/welcome` and `/webhooks/clerk/delete_account`
+  endpoints if they were created during the deviation period.
 - [ ] Clerk "Send test event" → both event types verified.
 - [ ] Manual end-to-end with a throwaway user (flag still off, hit route via temporary override): wipe → audit → Clerk delete → email → webhook backstop no-ops.
 - [ ] **Last:** flip `ACCOUNT_DELETION_ENABLED=true`.

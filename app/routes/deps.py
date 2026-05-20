@@ -13,6 +13,7 @@ Two Supabase clients per request:
 """
 
 import logging
+import secrets
 from typing import Annotated
 
 import jwt
@@ -73,3 +74,25 @@ def get_user_ctx(
         raise HTTPException(status_code=401, detail="invalid token")
 
     return UserContext(user_id=user_id, db=build_user_client(token))
+
+
+cron_bearer_scheme = HTTPBearer(
+    auto_error=True,
+    scheme_name="CronSharedSecret",
+    description="Shared secret bearer for /internal/* endpoints.",
+)
+
+
+def verify_cron_secret(
+    credentials: Annotated[HTTPAuthorizationCredentials, Depends(cron_bearer_scheme)],
+) -> None:
+    """Authenticate /internal/* callers (currently: the Supabase pg_cron job).
+
+    Compares the bearer token to `CRON_SHARED_SECRET` in constant time
+    so a timing attack can't probe the secret one byte at a time. No
+    JWT decoding here — preserves the rule that JWT verification only
+    lives in `get_user_ctx`.
+    """
+    expected = get_settings().cron_shared_secret
+    if not secrets.compare_digest(credentials.credentials, expected):
+        raise HTTPException(status_code=401, detail="invalid cron secret")

@@ -58,42 +58,6 @@ def make_token(rsa_keypair):
     return _make
 
 
-@pytest.fixture(autouse=True)
-def _patch_jwks(rsa_keypair):
-    fake = MagicMock()
-    fake.get_signing_key_from_jwt.return_value.key = rsa_keypair.public_key()
-    with patch("app.routes.deps.get_jwks_client", return_value=fake):
-        yield
-
-
-@pytest.fixture(autouse=True)
-def _patch_settings():
-    with patch("app.routes.deps.get_settings") as m:
-        m.return_value.clerk_issuer = _TEST_ISSUER
-        yield
-
-
-@pytest.fixture(autouse=True)
-def _patch_user_client():
-    with patch("app.routes.deps.build_user_client", return_value=_FakeDB()):
-        yield
-
-
-@pytest.fixture(autouse=True)
-def _patch_service_client():
-    with patch(
-        "app.routes.deps.build_service_role_client",
-        return_value=_FakeServiceClient(),
-    ):
-        yield
-
-
-@pytest.fixture(autouse=True)
-def _patch_profile_exists():
-    with patch("app.routes.deps.profile_exists", return_value=True) as m:
-        yield m
-
-
 def _call(token: str) -> UserContext:
     return get_user_ctx(
         HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
@@ -101,6 +65,37 @@ def _call(token: str) -> UserContext:
 
 
 class TestGetUserCtx:
+    @pytest.fixture(autouse=True)
+    def _patch_jwks(self, rsa_keypair):
+        fake = MagicMock()
+        fake.get_signing_key_from_jwt.return_value.key = rsa_keypair.public_key()
+        with patch("app.routes.deps.get_jwks_client", return_value=fake):
+            yield
+
+    @pytest.fixture(autouse=True)
+    def _patch_settings(self):
+        with patch("app.routes.deps.get_settings") as m:
+            m.return_value.clerk_issuer = _TEST_ISSUER
+            yield
+
+    @pytest.fixture(autouse=True)
+    def _patch_user_client(self):
+        with patch("app.routes.deps.build_user_client", return_value=_FakeDB()):
+            yield
+
+    @pytest.fixture(autouse=True)
+    def _patch_service_client(self):
+        with patch(
+            "app.routes.deps.build_service_role_client",
+            return_value=_FakeServiceClient(),
+        ):
+            yield
+
+    @pytest.fixture(autouse=True)
+    def _patch_profile_exists(self):
+        with patch("app.routes.deps.profile_exists", return_value=True) as m:
+            yield m
+
     def test_valid_token_returns_user_context(self, make_token):
         ctx = _call(make_token(sub="user-42"))
         assert ctx.user_id == "user-42"
@@ -163,3 +158,51 @@ class TestGetUserCtx:
             _call(make_token(sub=""))
         assert exc.value.status_code == 401
         assert exc.value.detail == "invalid token"
+
+
+def test_verify_cron_secret_accepts_matching_bearer(monkeypatch):
+    monkeypatch.setenv("CRON_SHARED_SECRET", "shh")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    from app.routes.deps import verify_cron_secret
+    from fastapi.security import HTTPAuthorizationCredentials
+
+    creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="shh")
+    # Should not raise.
+    verify_cron_secret(creds)
+
+
+def test_verify_cron_secret_rejects_mismatch(monkeypatch):
+    monkeypatch.setenv("CRON_SHARED_SECRET", "shh")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    from app.routes.deps import verify_cron_secret
+    from fastapi import HTTPException
+    from fastapi.security import HTTPAuthorizationCredentials
+
+    creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="wrong")
+    import pytest
+
+    with pytest.raises(HTTPException) as excinfo:
+        verify_cron_secret(creds)
+    assert excinfo.value.status_code == 401
+
+
+def test_verify_cron_secret_uses_constant_time_compare(monkeypatch):
+    """Smoke check: the comparison should not short-circuit on first
+    differing byte (mitigates timing attacks). We verify by patching
+    secrets.compare_digest and asserting it was called."""
+    monkeypatch.setenv("CRON_SHARED_SECRET", "shh")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    from app.routes.deps import verify_cron_secret
+    from fastapi.security import HTTPAuthorizationCredentials
+    from unittest.mock import patch
+
+    creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="shh")
+    with patch("app.routes.deps.secrets.compare_digest", return_value=True) as cmp:
+        verify_cron_secret(creds)
+    cmp.assert_called_once()
