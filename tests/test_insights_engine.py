@@ -37,6 +37,7 @@ from tests.conftest import (
     make_allocation,
     make_budget,
     make_expense,
+    make_goal,
     make_income,
 )
 
@@ -1026,7 +1027,6 @@ class TestAllowedWindowsForPeriod:
 
 class TestComputeGoalProgress:
     def test_excludes_achieved_goals(self):
-        from tests.conftest import make_goal
 
         goals = [
             make_goal(name="Done", is_achieved=True),
@@ -1037,7 +1037,6 @@ class TestComputeGoalProgress:
         assert [g.name for g in result] == ["Active"]
 
     def test_target_date_none_sets_days_remaining_none_and_on_track(self):
-        from tests.conftest import make_goal
 
         result = compute_goal_progress([make_goal(target_date=None)])
 
@@ -1046,7 +1045,6 @@ class TestComputeGoalProgress:
         assert result[0].on_track is True
 
     def test_past_target_date_marks_off_track(self):
-        from tests.conftest import make_goal
 
         past = date.today() - timedelta(days=10)
         result = compute_goal_progress([make_goal(target_date=past, is_achieved=False)])
@@ -1057,7 +1055,6 @@ class TestComputeGoalProgress:
         assert result[0].days_remaining < 0
 
     def test_zero_target_amount_yields_zero_pct_no_divzero(self):
-        from tests.conftest import make_goal
 
         result = compute_goal_progress(
             [make_goal(target_amount=0.0, current_amount=50.0)]
@@ -1067,7 +1064,6 @@ class TestComputeGoalProgress:
         assert result[0].progress_pct == 0.0
 
     def test_halfway_to_target_with_future_deadline(self):
-        from tests.conftest import make_goal
 
         future = date.today() + timedelta(days=30)
         result = compute_goal_progress(
@@ -1090,7 +1086,6 @@ class TestComputeGoalProgress:
 class TestBuildSummary:
     def test_stamps_budget_identity(self):
         from app.services.insights_engine import build_summary
-        from tests.conftest import make_goal
 
         budget = make_budget(id="budget-xyz")
         budget_with_name = budget.model_copy(update={"name": "April 2026"})
