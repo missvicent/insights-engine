@@ -1,8 +1,15 @@
 """Unit tests for the pending_emails db/client helpers."""
 
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
-from app.db.client import enqueue_email
+from app.db.client import (
+    claim_pending_email,
+    enqueue_email,
+    fetch_ready_pending_emails,
+    mark_pending_email_failed,
+    mark_pending_email_sent,
+)
 
 
 class TestEnqueueEmail:
@@ -45,9 +52,6 @@ class TestEnqueueEmail:
         )
 
 
-from app.db.client import claim_pending_email
-
-
 class TestClaimPendingEmail:
     def test_returns_row_when_rpc_returns_one(self):
         client = MagicMock()
@@ -77,9 +81,6 @@ class TestClaimPendingEmail:
         row = claim_pending_email(client, 42)
 
         assert row is None
-
-
-from app.db.client import fetch_ready_pending_emails
 
 
 class TestFetchReadyPendingEmails:
@@ -121,20 +122,15 @@ class TestFetchReadyPendingEmails:
         assert rows == []
 
 
-from datetime import datetime, timezone
-
-from app.db.client import mark_pending_email_sent
-
-
 class TestMarkPendingEmailSent:
     def test_updates_sent_at(self):
         client = MagicMock()
         eq = client.table.return_value.update.return_value.eq
         eq.return_value.execute.return_value.data = [{"id": 42}]
 
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         mark_pending_email_sent(client, 42)
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
 
         client.table.assert_called_once_with("pending_emails")
         update_args = client.table.return_value.update.call_args
@@ -145,9 +141,6 @@ class TestMarkPendingEmailSent:
         assert before <= sent_at <= after
 
         eq.assert_called_once_with("id", 42)
-
-
-from app.db.client import mark_pending_email_failed
 
 
 class TestMarkPendingEmailFailed:

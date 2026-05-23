@@ -1,6 +1,6 @@
 """Unit tests for the email_service consumer (try_send_pending_email)."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 

@@ -1,10 +1,10 @@
 """Unit tests for the single Clerk webhook dispatcher."""
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from httpx import Response
 from svix.webhooks import WebhookVerificationError
 
 from app.config import get_settings
@@ -35,7 +35,7 @@ def _headers():
     }
 
 
-def _post(body: dict) -> "Response":
+def _post(body: dict) -> Response:
     with TestClient(app) as client:
         return client.post("/webhooks/clerk", json=body, headers=_headers())
 
