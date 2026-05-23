@@ -53,11 +53,10 @@ services:
       PGRST_DB_ANON_ROLE: anon
       PGRST_DB_SCHEMAS: public
       PGRST_JWT_SECRET: ci-smoke-not-verified-by-anonymous-requests
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/3000 && echo -e \"GET / HTTP/1.0\\r\\n\\r\\n\" >&3 && cat <&3 | grep -q 200' || exit 1"]
-      interval: 2s
-      timeout: 3s
-      retries: 20
+    # No healthcheck: the postgrest:v13 image is distroless (no shell, no
+    # bash, no curl), so CMD/CMD-SHELL probes can't run. Downstream
+    # readiness is verified end-to-end by the `api` service's healthcheck
+    # (which proxies through `gateway` → postgrest → postgres).
 
   # Thin nginx gateway: proxies /rest/v1/* → PostgREST (port 3000).
   # Mirrors the Kong layout that supabase-py expects when it appends /rest/v1.
@@ -65,7 +64,7 @@ services:
     image: nginx:1.29.8-alpine
     depends_on:
       postgrest:
-        condition: service_healthy
+        condition: service_started
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
