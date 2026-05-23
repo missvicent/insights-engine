@@ -165,8 +165,9 @@ def test_verify_cron_secret_accepts_matching_bearer(monkeypatch):
     from app.config import get_settings
 
     get_settings.cache_clear()
-    from app.routes.deps import verify_cron_secret
     from fastapi.security import HTTPAuthorizationCredentials
+
+    from app.routes.deps import verify_cron_secret
 
     creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="shh")
     # Should not raise.
@@ -178,9 +179,10 @@ def test_verify_cron_secret_rejects_mismatch(monkeypatch):
     from app.config import get_settings
 
     get_settings.cache_clear()
-    from app.routes.deps import verify_cron_secret
     from fastapi import HTTPException
     from fastapi.security import HTTPAuthorizationCredentials
+
+    from app.routes.deps import verify_cron_secret
 
     creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="wrong")
     import pytest
@@ -198,9 +200,11 @@ def test_verify_cron_secret_uses_constant_time_compare(monkeypatch):
     from app.config import get_settings
 
     get_settings.cache_clear()
-    from app.routes.deps import verify_cron_secret
-    from fastapi.security import HTTPAuthorizationCredentials
     from unittest.mock import patch
+
+    from fastapi.security import HTTPAuthorizationCredentials
+
+    from app.routes.deps import verify_cron_secret
 
     creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="shh")
     with patch("app.routes.deps.secrets.compare_digest", return_value=True) as cmp:

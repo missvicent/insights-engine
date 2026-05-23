@@ -31,8 +31,8 @@ os.environ.setdefault("SUPABASE_ANON_KEY", "test-anon-key")
 os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "srv_test")
 os.environ.setdefault("CORS_ORIGINS", "")
 
-from app.context import UserContext  # noqa: E402  -- must follow setdefault block
-from app.models.schemas import (  # noqa: E402
+from app.context import UserContext
+from app.models.schemas import (
     AllocationRow,
     BudgetRow,
     GoalRow,
@@ -156,22 +156,22 @@ class FakeQuery:
     def __init__(self, rows: list[dict]) -> None:
         self._rows = rows
 
-    def select(self, *_a: object, **_kw: object) -> "FakeQuery":
+    def select(self, *_a: object, **_kw: object) -> FakeQuery:
         return self
 
-    def eq(self, *_a: object, **_kw: object) -> "FakeQuery":
+    def eq(self, *_a: object, **_kw: object) -> FakeQuery:
         return self
 
-    def gte(self, *_a: object, **_kw: object) -> "FakeQuery":
+    def gte(self, *_a: object, **_kw: object) -> FakeQuery:
         return self
 
-    def lte(self, *_a: object, **_kw: object) -> "FakeQuery":
+    def lte(self, *_a: object, **_kw: object) -> FakeQuery:
         return self
 
-    def limit(self, *_a: object, **_kw: object) -> "FakeQuery":
+    def limit(self, *_a: object, **_kw: object) -> FakeQuery:
         return self
 
-    def order(self, *_a: object, **_kw: object) -> "FakeQuery":
+    def order(self, *_a: object, **_kw: object) -> FakeQuery:
         return self
 
     def execute(self) -> object:
