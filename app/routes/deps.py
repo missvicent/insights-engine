@@ -59,22 +59,28 @@ def get_user_ctx(
                 "verify_aud": False,
             },
         )
-    except jwt.ExpiredSignatureError:
+    except jwt.ExpiredSignatureError as e:
+        logger.warning("auth: token expired: %s", e)
         raise HTTPException(status_code=401, detail="token expired") from None
-    except jwt.InvalidTokenError:
+    except jwt.InvalidTokenError as e:
+        logger.warning("auth: invalid token: %s: %s", type(e).__name__, e)
         raise HTTPException(status_code=401, detail="invalid token") from None
-    except jwt.InvalidIssuerError:
+    except jwt.InvalidIssuerError as e:
+        logger.warning("auth: invalid issuer: %s", e)
         raise HTTPException(status_code=401, detail="invalid token issuer") from None
-    except Exception:
+    except Exception as e:
+        logger.warning("auth: unable to verify token: %s: %s", type(e).__name__, e)
         raise HTTPException(status_code=401, detail="unable to verify token") from None
 
     user_id = payload["sub"]
     if not user_id:
+        logger.warning("auth: empty sub in verified token")
         raise HTTPException(status_code=401, detail="invalid token")
 
     sr_client = build_service_role_client()
     if not profile_exists(sr_client, user_id):
         # Uniform "invalid token" — don't leak whether an account exists.
+        logger.warning("auth: no profile row for verified sub=%s", user_id)
         raise HTTPException(status_code=401, detail="invalid token")
 
     return UserContext(user_id=user_id, db=build_user_client(token))
