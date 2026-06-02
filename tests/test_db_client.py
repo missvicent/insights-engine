@@ -135,7 +135,7 @@ class TestInsertAuditEvent:
         client.table.return_value.insert.assert_called_once_with(
             {
                 "user_id_hash": expected_hash,
-                "event": "request_created",
+                "event": "request_initiated",
                 "metadata": {},
             }
         )
@@ -151,7 +151,7 @@ class TestInsertAuditEvent:
 
         payload = client.table.return_value.insert.call_args[0][0]
         assert payload["metadata"] == meta
-        assert payload["event"] == "request_failed"
+        assert payload["event"] == "clerk_delete_failed"
 
     def test_raw_user_id_never_in_payload(self):
         client = MagicMock()

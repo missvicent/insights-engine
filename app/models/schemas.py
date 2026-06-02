@@ -7,10 +7,10 @@ from pydantic import BaseModel, Field
 
 class AuditEvent(Enum):
     # String values must match the account_deletion_audit_event_check
-    # constraint in the DB (see initial_schema migration).
-    REQUEST_INITIATED = "request_created"
+    # constraint in supabase/migrations/20260601225500_align_audit_event_check.sql.
+    REQUEST_INITIATED = "request_initiated"
     USER_DATA_DELETED = "user_data_deleted"
-    CLERK_DELETE_FAILED = "request_failed"
+    CLERK_DELETE_FAILED = "clerk_delete_failed"
 
 
 AnomalyType = Literal[
