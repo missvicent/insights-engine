@@ -129,11 +129,12 @@ class TestGetUserCtx:
         assert exc.value.status_code == 401
         assert exc.value.detail == "token expired"
 
-    def test_wrong_audience_is_401(self, make_token):
-        with pytest.raises(HTTPException) as exc:
-            _call(make_token(audience="service_role"))
-        assert exc.value.status_code == 401
-        assert exc.value.detail == "invalid token"
+    def test_token_without_aud_is_accepted(self, make_token):
+        # Clerk Third-Party Auth tokens carry `role: "authenticated"` and
+        # have no `aud` claim. JWKS-verified signature + issuer + exp + sub
+        # is the contract; aud is not part of it.
+        ctx = _call(make_token(sub="user-tpa", omit=("aud",)))
+        assert ctx.user_id == "user-tpa"
 
     def test_wrong_issuer_is_401(self, make_token):
         # NOTE: deps.py orders `except InvalidTokenError` before

@@ -50,10 +50,14 @@ def get_user_ctx(
             token,
             signing_key,
             algorithms=["RS256"],
-            audience="authenticated",
             issuer=settings.clerk_issuer,
             leeway=5,  # matches Clerk's dashboard "Allowed clock skew: 5s"
-            options={"require": ["exp", "sub", "aud", "iss"]},
+            options={
+                "require": ["exp", "sub", "iss"],
+                # Clerk Third-Party Auth tokens carry `role`, not `aud`.
+                # JWKS + issuer already bind the token to our Clerk instance.
+                "verify_aud": False,
+            },
         )
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="token expired") from None

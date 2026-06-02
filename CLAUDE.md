@@ -65,10 +65,12 @@ Core principle: Raw transactions → deterministic engine → structured summary
 
 The frontend obtains an RS256-signed JWT from Clerk and sends it as
 `Authorization: Bearer <token>`. The backend verifies the signature
-against Clerk's JWKS (cached in-process) and enforces `iss`, `aud`, `exp`,
-`sub`. Supabase independently re-verifies the same token via its Clerk
-Third-Party Auth provider; RLS policies compare `auth.jwt() ->> 'sub'` to
-`user_id` (stored as `text`, not UUID).
+against Clerk's JWKS (cached in-process) and enforces `iss`, `exp`, and
+`sub`. No audience check — Clerk's Third-Party Auth tokens use a `role`
+claim, not `aud`, and the JWKS + issuer pair already binds the token to
+our Clerk instance. Supabase independently re-verifies the same token
+via its Clerk Third-Party Auth provider; RLS policies compare
+`auth.jwt() ->> 'sub'` to `user_id` (stored as `text`, not UUID).
 
 Rules:
 1. JWT verification lives only in `app/routes/deps.py` (`get_user_ctx`)
