@@ -226,7 +226,8 @@ def insert_audit_event(
         {
             "user_id_hash": hashlib.sha256(user_id.encode()).hexdigest(),
             "event": event.value,
-            "metadata": metadata,
+            # Column is NOT NULL; coalesce None to {} so callers can omit metadata.
+            "metadata": metadata or {},
         }
     ).execute()
 

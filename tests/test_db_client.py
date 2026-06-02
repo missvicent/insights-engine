@@ -136,7 +136,7 @@ class TestInsertAuditEvent:
             {
                 "user_id_hash": expected_hash,
                 "event": "request_initiated",
-                "metadata": None,
+                "metadata": {},
             }
         )
         client.table.return_value.insert.return_value.execute.assert_called_once_with()
